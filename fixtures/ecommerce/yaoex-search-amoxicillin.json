@@ -1,0 +1,170 @@
+{
+  "_meta": {
+    "adapter": "yaoex/search",
+    "site": "1药城 (mall.yaoex.com)",
+    "keyword": "阿莫西林",
+    "page": 1,
+    "pageSize": 10,
+    "pageCount": 240,
+    "totalCount": 2398,
+    "capturedAt": "2026-05-18T11:08:01.486Z",
+    "session": "天津市正顺大药房有限公司第一分公司",
+    "apiEndpoint": "POST https://gateway-b2b.fangkuaiyi.com/home/search/homeSearchList",
+    "authScheme": "tier-2 (token from ycgltoken cookie, signature=****, closesignature=yes)",
+    "priceDecryption": "AES-128-ECB PKCS7, key=GDLSAUO1KU + userId[0:6].padStart(6,'0')",
+    "notes": "Server caps pageSize at 10 regardless of requested value"
+  },
+  "summary": {
+    "totalProducts": 10,
+    "priceRange": "¥3.84 - ¥12.84",
+    "pricesDecrypted": 9,
+    "pricesNull": 1,
+    "allInStock": true,
+    "suppliers": [
+      "湖北亿昊药业有限公司",
+      "昆山亿方药业有限公司",
+      "广东壹号药业有限公司"
+    ],
+    "factories": [
+      "湖南科伦制药有限公司",
+      "浙江亚太药业股份有限公司",
+      "中山市力恩普制药有限公司",
+      "广州白云山医药集团股份有限公司白云山制药总厂",
+      "石药集团中诺药业(石家庄)有限公司",
+      "海南先声药业有限公司"
+    ]
+  },
+  "products": [
+    {
+      "name": "关照",
+      "spuInfoId": 1046610,
+      "productId": "2631917",
+      "spec": "0.25g*14粒*3板",
+      "shortName": "阿莫西林胶囊",
+      "factoryName": "中山市力恩普制药有限公司",
+      "storeName": "广东壹号药业有限公司",
+      "price": 5.65,
+      "stockCount": 22332,
+      "stepCount": 1,
+      "unit": "盒"
+    },
+    {
+      "name": "优捷康/雅泰",
+      "spuInfoId": 778464,
+      "productId": "512448",
+      "spec": "156.25mg*6片*3板",
+      "shortName": "阿莫西林克拉维酸钾分散片",
+      "factoryName": "浙江亚太药业股份有限公司",
+      "storeName": "广东壹号药业有限公司",
+      "price": 8.0,
+      "stockCount": 5575,
+      "stepCount": 1,
+      "unit": "盒"
+    },
+    {
+      "name": "金力舒/白云山/抗之霸",
+      "spuInfoId": 849269,
+      "productId": "3025844",
+      "spec": "0.457g*6片*2板",
+      "shortName": "阿莫西林克拉维酸钾片",
+      "factoryName": "广州白云山医药集团股份有限公司白云山制药总厂",
+      "storeName": "昆山亿方药业有限公司",
+      "price": 12.84,
+      "stockCount": 372,
+      "stepCount": 1,
+      "unit": "盒"
+    },
+    {
+      "name": "石药/诺莫灵/CSPC",
+      "spuInfoId": 19068,
+      "productId": "1557792",
+      "spec": "0.25g*50粒",
+      "shortName": "阿莫西林胶囊",
+      "factoryName": "石药集团中诺药业(石家庄)有限公司",
+      "storeName": "广东壹号药业有限公司",
+      "price": 4.48,
+      "stockCount": 20114,
+      "stepCount": 1,
+      "unit": "盒"
+    },
+    {
+      "name": "再林",
+      "spuInfoId": 3479,
+      "productId": "2595542",
+      "spec": "0.125g*24袋",
+      "shortName": "阿莫西林颗粒",
+      "factoryName": "海南先声药业有限公司",
+      "storeName": "广东壹号药业有限公司",
+      "price": null,
+      "stockCount": 826,
+      "stepCount": 1,
+      "unit": "盒",
+      "note": "status=-2 (控销), promotionPrice is the actual price field"
+    },
+    {
+      "name": "科伦",
+      "spuInfoId": 19366,
+      "productId": "2973205",
+      "spec": "0.25g*10粒*5板",
+      "shortName": "阿莫西林胶囊",
+      "factoryName": "湖南科伦制药有限公司",
+      "storeName": "广东壹号药业有限公司",
+      "price": 4.19,
+      "stockCount": 1995,
+      "stepCount": 1,
+      "unit": "盒"
+    },
+    {
+      "name": "力恩普",
+      "spuInfoId": 116472,
+      "productId": "2710485",
+      "spec": "0.5g*10粒*3板",
+      "shortName": "阿莫西林胶囊",
+      "factoryName": "中山市力恩普制药有限公司",
+      "storeName": "昆山亿方药业有限公司",
+      "price": 7.59,
+      "stockCount": 11506,
+      "stepCount": 1,
+      "unit": "盒"
+    },
+    {
+      "name": "金力舒/白云山/抗之霸",
+      "spuInfoId": 849269,
+      "productId": "3025844",
+      "spec": "0.457g*6片*2板",
+      "shortName": "阿莫西林克拉维酸钾片",
+      "factoryName": "广州白云山医药集团股份有限公司白云山制药总厂",
+      "storeName": "广东壹号药业有限公司",
+      "price": 12.68,
+      "stockCount": 607,
+      "stepCount": 1,
+      "unit": "盒"
+    },
+    {
+      "name": "迈啉光/雅泰",
+      "spuInfoId": 118150,
+      "productId": "600314",
+      "spec": "0.25g*12粒*2板",
+      "shortName": "阿莫西林胶囊",
+      "factoryName": "浙江亚太药业股份有限公司",
+      "storeName": "广东壹号药业有限公司",
+      "price": 3.84,
+      "stockCount": 2610,
+      "stepCount": 1,
+      "unit": "盒"
+    },
+    {
+      "name": "金力舒/白云山/抗之霸",
+      "spuInfoId": 849269,
+      "productId": "3025844",
+      "spec": "0.457g*6片*2板",
+      "shortName": "阿莫西林克拉维酸钾片",
+      "factoryName": "广州白云山医药集团股份有限公司白云山制药总厂",
+      "storeName": "湖北亿昊药业有限公司",
+      "price": 12.55,
+      "stockCount": 574,
+      "stepCount": 1,
+      "unit": "盒"
+    }
+  ]
+}

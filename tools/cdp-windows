@@ -1,0 +1,140 @@
+#!/usr/bin/env bash
+#
+# cdp-windows — start a transient bb-browser daemon that connects to a Chrome
+# instance running on the Windows host (CDP over TCP from WSL2 → Windows).
+#
+# Usage:
+#   ./cdp-windows                          auto-detect Windows host IP, CDP port 9223
+#   ./cdp-windows --port 9223              override CDP port
+#   ./cdp-windows --host 1.2.3.4           override Windows host IP
+#   ./cdp-windows --daemon-port 19834      override daemon HTTP port (default 19834)
+#   ./cdp-windows --bb-home <dir>          override BB_BROWSER_HOME (default ~/.bb-browser-windows)
+#   ./cdp-windows --probe-only             verify connectivity without starting daemon
+#
+# This is a TRANSIENT daemon. Ctrl-C to stop. Nothing in ~/.openclaw/openclaw.json
+# is modified. Re-run after each WSL2 restart since the Windows host IP can change.
+#
+# This script ISOLATES daemon state under BB_BROWSER_HOME=~/.bb-browser-windows
+# so it does not collide with any existing daemon at ~/.bb-browser/ (which may be
+# managing your local WSL2 chromium with its own tabs).
+#
+# To use the Windows-Chrome daemon from another shell:
+#   export BB_BROWSER_HOME=~/.bb-browser-windows
+#   bb-browser tab list
+#
+# Prerequisites — run these on the Windows side BEFORE running this script:
+#   1. Close all Chrome windows.
+#   2. Launch Chrome with remote debugging (Chrome 111+ binds CDP to 127.0.0.1
+#      regardless of --remote-debugging-address; that is why we use portproxy):
+#        chrome.exe --remote-debugging-port=9222
+#   3. As Administrator, expose 9222 on a LAN-visible port:
+#        netsh interface portproxy add v4tov4 listenaddress=0.0.0.0 listenport=9223 connectaddress=127.0.0.1 connectport=9222
+#   4. Allow inbound TCP 9223 from WSL2 in Windows Defender Firewall:
+#        New-NetFirewallRule -DisplayName "WSL CDP 9223" -Direction Inbound -LocalPort 9223 -Protocol TCP -Action Allow -RemoteAddress 172.16.0.0/12
+#   5. Log into the target site (e.g. mall.yaoex.com) in this Chrome instance.
+#
+
+set -euo pipefail
+
+CDP_HOST=""
+CDP_PORT=9223
+DAEMON_PORT=19834
+BB_HOME="${HOME}/.bb-browser-windows"
+PROBE_ONLY=0
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --host)         CDP_HOST="$2"; shift 2 ;;
+    --port)         CDP_PORT="$2"; shift 2 ;;
+    --daemon-port)  DAEMON_PORT="$2"; shift 2 ;;
+    --bb-home)      BB_HOME="$2"; shift 2 ;;
+    --probe-only)   PROBE_ONLY=1; shift ;;
+    -h|--help)
+      awk '/^# Usage:/,/^$/ {sub(/^# ?/,""); print}' "$0"
+      exit 0
+      ;;
+    *) echo "unknown flag: $1" >&2; exit 2 ;;
+  esac
+done
+
+# 1. Resolve Windows host IP.
+if [[ -z "$CDP_HOST" ]]; then
+  CDP_HOST="$(ip route show default 2>/dev/null | awk '/default/ {print $3; exit}')"
+  if [[ -z "$CDP_HOST" ]]; then
+    echo "cdp-windows: could not detect Windows host IP via 'ip route show default'." >&2
+    echo "             pass --host <ip> manually." >&2
+    exit 1
+  fi
+  echo "cdp-windows: detected Windows host IP: $CDP_HOST"
+fi
+
+# 2. Probe Chrome CDP endpoint before starting the daemon — fail fast with diagnosis.
+PROBE_URL="http://${CDP_HOST}:${CDP_PORT}/json/version"
+echo "cdp-windows: probing ${PROBE_URL}"
+
+if ! curl --silent --fail --max-time 3 "$PROBE_URL" -o /tmp/cdp-windows-probe.json; then
+  cat >&2 <<EOF
+cdp-windows: cannot reach Chrome CDP at ${CDP_HOST}:${CDP_PORT}.
+
+Checklist (run on the Windows side):
+  1. Chrome was launched with both flags:
+       --remote-debugging-port=${CDP_PORT}
+       --remote-debugging-address=0.0.0.0
+  2. Windows Defender Firewall has an inbound rule for TCP ${CDP_PORT}
+     allowing connections from your WSL2 subnet (or 'Any' temporarily for diagnosis).
+  3. From WSL2, this returns Chrome JSON:
+       curl http://${CDP_HOST}:${CDP_PORT}/json/version
+
+If step 3 fails with "Connection refused", Chrome is not bound to that interface
+(missing --remote-debugging-address=0.0.0.0). If step 3 hangs and times out,
+Windows Firewall is blocking.
+EOF
+  exit 1
+fi
+
+BROWSER_VERSION="$(jq -r '.Browser // "?"' /tmp/cdp-windows-probe.json 2>/dev/null || echo "?")"
+echo "cdp-windows: connected to ${BROWSER_VERSION}"
+
+# Optional: list visible tabs so the user can confirm it is the right Chrome.
+TAB_COUNT="$(curl --silent --max-time 3 "http://${CDP_HOST}:${CDP_PORT}/json" 2>/dev/null \
+              | jq 'length' 2>/dev/null || echo "?")"
+echo "cdp-windows: Chrome has ${TAB_COUNT} tabs visible to CDP"
+
+if [[ "$PROBE_ONLY" == "1" ]]; then
+  echo "cdp-windows: --probe-only set, exiting without starting daemon."
+  exit 0
+fi
+
+# 3. Refuse to bind a port already in use.
+if ss -tln 2>/dev/null | awk '{print $4}' | grep -qE "[:.]${DAEMON_PORT}\$"; then
+  echo "cdp-windows: port ${DAEMON_PORT} already in use. Pass --daemon-port to override." >&2
+  exit 1
+fi
+
+# 4. Set up isolated BB_BROWSER_HOME so daemon.json does not collide with any
+# other daemon (e.g. ~/.bb-browser/ for a local WSL2 chromium).
+mkdir -p "$BB_HOME"
+export BB_BROWSER_HOME="$BB_HOME"
+
+cat <<EOF
+cdp-windows: starting bb-browser daemon → ${CDP_HOST}:${CDP_PORT}
+
+  daemon HTTP    127.0.0.1:${DAEMON_PORT}
+  CDP target     ${CDP_HOST}:${CDP_PORT}
+  BB_BROWSER_HOME=${BB_HOME}
+
+To use this daemon from another shell:
+
+  export BB_BROWSER_HOME=${BB_HOME}
+  bb-browser tab list
+
+(Ctrl-C here to stop the daemon.)
+
+EOF
+
+# Hand off. exec so signals (Ctrl-C) propagate cleanly.
+exec bb-browser daemon \
+  --host 127.0.0.1 \
+  --port "$DAEMON_PORT" \
+  --cdp-host "$CDP_HOST" \
+  --cdp-port "$CDP_PORT"

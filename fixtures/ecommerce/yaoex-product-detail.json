@@ -1,0 +1,89 @@
+{
+  "meta": {
+    "adapter": "yaoex/product",
+    "source": "https://mall.yaoex.com/v2/product/#/spuCode/8353YCH190453/sellerCode/100004481",
+    "api": "POST gateway-b2b.fangkuaiyi.com/product/detail",
+    "captured_at": "2026-05-18T22:30:00+08:00",
+    "auth": "tier-2 (ycgltoken cookie + AES price encryption)",
+    "notes": "Product detail page at /v2/product/ (NOT /v2/pages/). URL pattern: /v2/product/#/spuCode/{spuCode}/sellerCode/{sellerCode}"
+  },
+  "request": {
+    "method": "POST",
+    "url": "https://gateway-b2b.fangkuaiyi.com/product/detail",
+    "query_params": {
+      "traderName": "yaoex_pc",
+      "trader": "pc",
+      "closesignature": "yes",
+      "signature_method": "md5",
+      "signature": "****",
+      "timestamp": "<epoch_ms>",
+      "token": "<ycgltoken>",
+      "userToken": "<ycgltoken>"
+    },
+    "headers": {
+      "Content-Type": "application/x-www-form-urlencoded",
+      "X-Request-Agent": "Axios",
+      "X-Requested-With": "XMLHttpRequest"
+    },
+    "body": {
+      "spuCode": "8353YCH190453",
+      "sellerCode": "100004481"
+    }
+  },
+  "response": {
+    "rtn_code": "0",
+    "data": {
+      "spuCode": "8353YCH190453",
+      "sellerCode": "100004481",
+      "productName": "威奇达/阿西诺 阿莫西林克拉维酸钾片",
+      "spec": "0.375g*6片",
+      "unit": "盒",
+      "factoryName": "国药集团威奇达药业有限公司",
+      "approvalNum": "国药准字H14023129",
+      "drugCode": "XJ01CRA042A001010102954",
+      "bigPacking": 400,
+      "middlePacking": 10,
+      "minPackage": 1,
+      "minBatch": 1,
+      "shelfLife": "24月",
+      "producedTime": "2026-03-17",
+      "deadline": "2028-02-29",
+      "drug": true,
+      "medicareFlag": true,
+      "medicareLabel": "甲类",
+      "stockCount": 450,
+      "stockDesc": "有货",
+      "cityName": "苏州市",
+      "ziyingFlag": true,
+      "mainImg": "https://p8.maiyaole.com/img/sku/202103/15/54368605_20210315155203330.jpg",
+      "title": "威奇达/阿西诺 阿莫西林克拉维酸钾片",
+      "shortName": "阿莫西林克拉维酸钾片",
+      "sellerName": "昆山亿方药业有限公司",
+      "priceInfo": {
+        "price": "2.68",
+        "activityPrice": "2.58",
+        "activityPriceText": "特价",
+        "encryPrice": "dfv5IciiWC6pFGcB51CoeA==",
+        "encryActivityPrice": "UJs2mmdHLAbhc5ZnhcJumQ==",
+        "showPrice": true,
+        "showActivityPrice": true,
+        "buttonText": "加入进货单",
+        "productStatus": true
+      },
+      "categorys": [
+        {
+          "category": "A",
+          "categoryName": "中西成药"
+        },
+        {
+          "category": "AA",
+          "categoryName": "抗菌药物"
+        },
+        {
+          "category": "AAA",
+          "categoryName": "抗生素类药物"
+        }
+      ]
+    }
+  }
+}

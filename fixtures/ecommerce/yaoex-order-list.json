@@ -1,0 +1,56 @@
+{
+  "adapter": "yaoex/order-list",
+  "captured_at": "2026-05-18",
+  "api": {
+    "endpoint": "POST https://gateway-b2b.fangkuaiyi.com/api/order/list",
+    "body_format": "application/x-www-form-urlencoded",
+    "body_params": {
+      "jsonParams": "JSON string with pageNo, pageSize, param.orderStatus, param.productName, param.supplyName, param.flowId, param.queryHistory, param.createBeginTime, param.createEndTime"
+    }
+  },
+  "response_structure": {
+    "rtn_code": "0",
+    "data": {
+      "pageCount": 2,
+      "bizPages": 2,
+      "orderList": [
+        {
+          "orderId": "ZXD202604241522079953",
+          "orderStatus": "7",
+          "orderStatusName": "已完成",
+          "createTime": "2026-04-24 15:22:07",
+          "payTime": "2026-04-24 15:29:48",
+          "receiveTime": "2026-05-04 10:30:11",
+          "orderTotal": 0.98,
+          "finalPay": 0.98,
+          "supplyName": "国承堂中药",
+          "supplyId": 703611,
+          "userId": 678959,
+          "productNumber": 1,
+          "varietyNumber": 1,
+          "payType": 1,
+          "payTypeId": 91,
+          "productList": [
+            {
+              "productId": 3015402,
+              "spuCode": "2919422826X",
+              "shortName": "胎菊",
+              "spec": "50g",
+              "productPrice": 0.98,
+              "quantity": 1,
+              "productPicUrl": "https://p8.maiyaole.com/fky/img/sell/1773056364526.jpg",
+              "orderDetailId": 346101482
+            }
+          ],
+          "invoiceDtoList": [
+            {
+              "invoiceName": "电子发票1",
+              "filePath": "https://cos.fyyk.net/msg/2026/..."
+            }
+          ],
+          "contractFullPath": "https://111-b2b-contract-1302841774.cos.ap-shanghai.myqcloud.com/order/hetong/pdf/..."
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,167 @@
+{
+  "_meta": {
+    "adapter": "yaoex/cart-list",
+    "site": "1药城 (mall.yaoex.com)",
+    "capturedAt": "2026-05-18T11:12:00.000Z",
+    "session": "天津市正顺大药房有限公司第一分公司",
+    "apiEndpoint": "POST https://gateway-b2b.fangkuaiyi.com/api/cart/list",
+    "requestBody": "showreducedpricegood=0",
+    "authScheme": "tier-2 (token from ycgltoken cookie, signature=****, closesignature=yes)",
+    "priceDecryption": "AES-128-ECB PKCS7, key=GDLSAUO1KU + userId[0:6].padStart(6,'0')",
+    "dataPath": "data.supplyCartList[].productGroupList[].groupItemList[]",
+    "notes": "price field in cart context may not decrypt the same as in search; originalPrice works"
+  },
+  "summary": {
+    "rtn_code": "0",
+    "productsCount": 4,
+    "invalidCount": 10,
+    "totalAmount": 0,
+    "payAmount": 0,
+    "discountAmount": 0,
+    "freight": 0,
+    "supplyCount": 8,
+    "totalProducts": 14
+  },
+  "products": [
+    {
+      "supplyName": "河南壹号医药有限公司",
+      "productName": "长安 维C银翘片",
+      "spuInfoId": 528536,
+      "productId": 2560783,
+      "unit": "包",
+      "originalPrice": 17.44,
+      "quantity": null,
+      "status": null
+    },
+    {
+      "supplyName": "广东壹号药业有限公司",
+      "productName": "RoyalGlory/皇家荣耀 维C银翘片",
+      "spuInfoId": 1247024,
+      "productId": 2787173,
+      "unit": "盒",
+      "originalPrice": 3.15,
+      "quantity": null,
+      "status": null
+    },
+    {
+      "supplyName": "广东壹号药业有限公司",
+      "productName": "RoyalGlory/皇家荣耀 头孢克肟片",
+      "spuInfoId": 847471,
+      "productId": 2184440,
+      "unit": "盒",
+      "originalPrice": 5.97,
+      "quantity": null,
+      "status": null
+    },
+    {
+      "supplyName": "广东壹号药业有限公司",
+      "productName": "白云山/陳李濟 乌鸡白凤丸",
+      "spuInfoId": 16137,
+      "productId": 61709,
+      "unit": "盒",
+      "originalPrice": 25.09,
+      "quantity": null,
+      "status": null
+    },
+    {
+      "supplyName": "广东壹号药业有限公司",
+      "productName": "顶宜 雷贝拉唑钠肠溶片",
+      "spuInfoId": null,
+      "productId": 2707908,
+      "unit": "",
+      "originalPrice": 0,
+      "quantity": null,
+      "status": "invalid"
+    },
+    {
+      "supplyName": "广东壹号药业有限公司",
+      "productName": "金冲/VANTONE 复方金钱草颗粒",
+      "spuInfoId": 17074,
+      "productId": 2816338,
+      "unit": "包",
+      "originalPrice": 24.29,
+      "quantity": null,
+      "status": null
+    },
+    {
+      "supplyName": "广东壹号药业有限公司",
+      "productName": "伟哥 他达拉非片",
+      "spuInfoId": null,
+      "productId": 2747121,
+      "unit": "",
+      "originalPrice": 0,
+      "quantity": null,
+      "status": "invalid"
+    },
+    {
+      "supplyName": "广东壹号药业有限公司",
+      "productName": "赛立克 乙酰半胱氨酸颗粒",
+      "spuInfoId": 1247777,
+      "productId": 2788582,
+      "unit": "盒",
+      "originalPrice": 8.12,
+      "quantity": null,
+      "status": null
+    },
+    {
+      "supplyName": "重庆亿昊药业有限公司",
+      "productName": "華青 盐酸金霉素眼膏",
+      "spuInfoId": 825119,
+      "productId": 2602580,
+      "unit": "盒",
+      "originalPrice": 4.68,
+      "quantity": null,
+      "status": null
+    },
+    {
+      "supplyName": "陕西瑞美医药有限公司",
+      "productName": "天武/依路静 苯磺酸氨氯地平片",
+      "spuInfoId": 111569,
+      "productId": 1802380,
+      "unit": "盒",
+      "originalPrice": 2.93,
+      "quantity": null,
+      "status": null
+    },
+    {
+      "supplyName": "安徽华源医药总部旗舰店",
+      "productName": "百灵鸟 维C银翘片",
+      "spuInfoId": null,
+      "productId": 34894,
+      "unit": "",
+      "originalPrice": 0,
+      "quantity": null,
+      "status": "invalid"
+    },
+    {
+      "supplyName": "药聚蓉30日16时截单，4日16时发货",
+      "productName": "燕鱼 水杨酸苯酚贴膏",
+      "spuInfoId": null,
+      "productId": 752947,
+      "unit": "",
+      "originalPrice": 0,
+      "quantity": null,
+      "status": "invalid"
+    },
+    {
+      "supplyName": "药源地",
+      "productName": "倍他乐克 酒石酸美托洛尔片",
+      "spuInfoId": null,
+      "productId": 2005016,
+      "unit": "",
+      "originalPrice": 0,
+      "quantity": null,
+      "status": "invalid"
+    },
+    {
+      "supplyName": "内蒙古悠家医疗科技有限公司",
+      "productName": "优卡丹 高渗性海水鼻腔喷雾器",
+      "spuInfoId": null,
+      "productId": 2475670,
+      "unit": "",
+      "originalPrice": 0,
+      "quantity": null,
+      "status": "invalid"
+    }
+  ]
+}

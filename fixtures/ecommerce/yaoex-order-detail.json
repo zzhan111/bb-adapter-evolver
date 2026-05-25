@@ -1,0 +1,51 @@
+{
+  "adapter": "yaoex/order-detail",
+  "captured_at": "2026-05-18",
+  "api": {
+    "endpoints": [
+      {
+        "method": "GET",
+        "url": "https://mall.yaoex.com/center/order/{orderId}/main",
+        "auth": "cookie-based (same domain, no gateway signature)",
+        "response_type": "JSON with code/data/msg"
+      },
+      {
+        "method": "GET",
+        "url": "https://mall.yaoex.com/center/order/{orderId}/logistic",
+        "auth": "cookie-based (same domain, no gateway signature)",
+        "response_type": "JSON with code/data/msg"
+      }
+    ]
+  },
+  "main_response_keys": [
+    "orderId",
+    "orderStatus",
+    "orderStatusName",
+    "createTime",
+    "payTime",
+    "deliverTime",
+    "receiveTime",
+    "finalPay",
+    "orderTotal",
+    "freight",
+    "couponMoney",
+    "supplyName",
+    "supplyId",
+    "custName",
+    "custId",
+    "address",
+    "productList",
+    "orderDetailList",
+    "invoiceDtoList",
+    "orderStatusNodeInfo",
+    "payName",
+    "contractFullPath"
+  ],
+  "logistic_response_keys": [
+    "expressCompany",
+    "expressNo",
+    "deliveryContactPerson",
+    "deliveryMethod",
+    "logList"
+  ]
+}

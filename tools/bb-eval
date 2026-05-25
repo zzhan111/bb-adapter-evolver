@@ -1,0 +1,257 @@
+#!/usr/bin/env bash
+#
+# bb-eval — score a bb-browser adapter against the contract for its domain.
+#
+# Usage:
+#   bb-eval <path-to-adapter.js> [--domain ecommerce]
+#   bb-eval <path-to-adapter.js> --json
+#
+# Exit code: 0 if all FAIL checks pass, 1 otherwise.
+# WARNs do not affect exit code.
+#
+# This is a STATIC checker. It reads the adapter source and its @meta block.
+# It does NOT execute the adapter. To execute, use bb-browser MCP separately.
+#
+set -u
+
+ADAPTER=""
+DOMAIN=""
+JSON_OUT=0
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --domain) DOMAIN="$2"; shift 2 ;;
+    --json) JSON_OUT=1; shift ;;
+    -h|--help)
+      sed -n '2,15p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    -*) echo "unknown flag: $1" >&2; exit 2 ;;
+    *) ADAPTER="$1"; shift ;;
+  esac
+done
+
+if [[ -z "$ADAPTER" ]]; then
+  echo "usage: bb-eval <path-to-adapter.js> [--domain ecommerce] [--json]" >&2
+  exit 2
+fi
+
+if [[ ! -f "$ADAPTER" ]]; then
+  echo "bb-eval: not a file: $ADAPTER" >&2
+  exit 2
+fi
+
+if ! command -v jq >/dev/null 2>&1; then
+  echo "bb-eval: jq is required but not installed" >&2
+  exit 2
+fi
+
+# ----- accumulators -----
+declare -a RESULTS  # each entry: "LEVEL\tCHECK\tMESSAGE"
+PASS=0; WARN=0; FAIL=0
+
+record() {
+  local level="$1" check="$2" msg="$3"
+  RESULTS+=("${level}"$'\t'"${check}"$'\t'"${msg}")
+  case "$level" in
+    PASS) PASS=$((PASS+1)) ;;
+    WARN) WARN=$((WARN+1)) ;;
+    FAIL) FAIL=$((FAIL+1)) ;;
+  esac
+}
+
+# ----- Read source + extract @meta -----
+SRC="$(cat "$ADAPTER")"
+META_JSON="$(printf '%s' "$SRC" \
+  | awk 'BEGIN{found=0; depth=0; out=""}
+         /\/\* @meta/ {found=1; next}
+         found {
+           # collect until closing */
+           if (match($0, /\*\//)) {
+             out = out substr($0, 1, RSTART-1)
+             print out
+             exit
+           } else {
+             out = out $0 "\n"
+           }
+         }')"
+
+if [[ -z "$META_JSON" ]]; then
+  record FAIL meta-block "Missing /* @meta { ... } */ block at top of adapter file."
+else
+  if ! printf '%s' "$META_JSON" | jq -e . >/dev/null 2>&1; then
+    record FAIL meta-block-valid "@meta block is not valid JSON."
+    META_JSON=""
+  else
+    record PASS meta-block-valid "@meta block parses as JSON."
+  fi
+fi
+
+meta_get() {
+  printf '%s' "$META_JSON" | jq -r "$1" 2>/dev/null
+}
+
+# Check if a top-level @meta field exists (not null), even if its value is false/0/""
+meta_has() {
+  local key="$1"
+  printf '%s' "$META_JSON" | jq -e --arg k "$key" 'has($k) and (.[$k] != null)' >/dev/null 2>&1
+}
+
+# ----- Domain detection -----
+NAME="$(meta_get '.name')"
+META_DOMAIN="$(meta_get '.domain')"
+ADAPTER_LOCAL="${NAME##*/}"
+
+if [[ -z "$DOMAIN" ]]; then
+  # heuristic: ecommerce hosts/keywords
+  case "$META_DOMAIN" in
+    *ysbang*|*jd.com*|*pdd.com*|*taobao.com*|*111.com.cn*|*1yaocheng*|*tmall*|*yaoex*|*fangkuaiyi*) DOMAIN=ecommerce ;;
+    *) DOMAIN=unknown ;;
+  esac
+fi
+
+# ----- Check 1: URL constant in first 50 lines -----
+HEADER="$(head -n 50 "$ADAPTER")"
+if printf '%s' "$HEADER" | grep -Eq "(const|let|var)\s+[A-Z_]*URL[A-Z_]*\s*=\s*['\"]https?://"; then
+  record PASS url-declared "Destination URL constant declared in first 50 lines."
+elif printf '%s' "$HEADER" | grep -Eq "https?://[a-zA-Z0-9.-]+"; then
+  record WARN url-declared "URL appears in first 50 lines but not as a named constant. Prefer 'const HOME_URL = ...'."
+else
+  record FAIL url-declared "No destination URL constant in first 50 lines. Required: const HOME_URL = 'https://...';"
+fi
+
+# ----- Check 2: @meta required fields -----
+if [[ -n "$META_JSON" ]]; then
+  for field in name description domain args capabilities readOnly example; do
+    if meta_has "$field"; then
+      record PASS "meta-field-${field}" "@meta.${field} is present."
+    else
+      record FAIL "meta-field-${field}" "@meta is missing required field: ${field}"
+    fi
+  done
+
+  # name must be <site>/<adapter>
+  if [[ -n "$NAME" && "$NAME" != */* ]]; then
+    record FAIL meta-name-format "@meta.name must be '<site>/<adapter>', got: ${NAME}"
+  fi
+
+  # example must look like a bb-browser site command
+  EXAMPLE="$(meta_get '.example')"
+  if [[ -n "$EXAMPLE" && "$EXAMPLE" != *"bb-browser site"* ]]; then
+    record WARN meta-example-format "@meta.example does not look like 'bb-browser site ...'."
+  fi
+fi
+
+# ----- Check 3: adapter name not in forbidden list (ecommerce only) -----
+if [[ "$DOMAIN" == "ecommerce" && -n "$ADAPTER_LOCAL" ]]; then
+  case "$ADAPTER_LOCAL" in
+    search-by-*|search-with-*|search-filter|search-filters|search-plan)
+      record FAIL forbidden-name \
+        "Adapter name '${ADAPTER_LOCAL}' is a filter-variant of search. Contract forbids this. Fold filters into search arguments."
+      ;;
+    cart-summary)
+      record FAIL forbidden-name \
+        "'cart-summary' is forbidden. Merge into 'cart-list' (return both summary and items)."
+      ;;
+    order-create|submit-order|auto-purchase|regular-buy|auto-*|*-debug|*-debug.js)
+      record FAIL forbidden-name \
+        "Adapter name '${ADAPTER_LOCAL}' is forbidden by ecommerce contract (orchestration / submit / debug variant)."
+      ;;
+    auth|search|product|cart-list|cart-add|cart-remove|checkout-preview|order-list|order-detail)
+      record PASS canonical-name "'${ADAPTER_LOCAL}' is a P0 canonical adapter."
+      ;;
+    switch-store|coupon-list|coupon-claim|address-list|order-cancel|logistics)
+      record PASS canonical-name "'${ADAPTER_LOCAL}' is a P1 canonical adapter."
+      ;;
+    *)
+      record WARN unknown-name \
+        "'${ADAPTER_LOCAL}' is not in the canonical P0/P1 set. Justify or rename."
+      ;;
+  esac
+fi
+
+# ----- Check 4: write-capable adapter declares readOnly: false -----
+if [[ -n "$META_JSON" ]]; then
+  RO="$(meta_get '.readOnly')"
+  case "$ADAPTER_LOCAL" in
+    cart-add|cart-remove|coupon-claim|order-cancel)
+      if [[ "$RO" == "true" ]]; then
+        record FAIL readonly-mismatch \
+          "Adapter '${ADAPTER_LOCAL}' mutates state but @meta.readOnly is true."
+      fi
+      ;;
+  esac
+fi
+
+# ----- Check 5: error envelope (error/hint/action) -----
+if grep -Eq "return\s*{[^}]*error\s*:" "$ADAPTER"; then
+  if grep -Eq "hint\s*:" "$ADAPTER" && grep -Eq "action\s*:" "$ADAPTER"; then
+    record PASS error-envelope "Adapter returns error/hint/action triple somewhere."
+  else
+    record WARN error-envelope \
+      "Adapter returns errors but does not consistently include 'hint' and 'action' fields. Required by contract."
+  fi
+fi
+
+# ----- Check 6: constraint-tracking trio (only for adapters that take filters) -----
+case "$ADAPTER_LOCAL" in
+  search|cart-list|order-list)
+    if grep -q "requestedConstraints" "$ADAPTER" \
+        && grep -q "executedConstraints" "$ADAPTER" \
+        && grep -q "deferredConstraints" "$ADAPTER"; then
+      record PASS constraint-tracking "Constraint trio (requested/executed/deferred) is present."
+    else
+      record WARN constraint-tracking \
+        "List adapters should populate requestedConstraints / executedConstraints / deferredConstraints. See contract."
+    fi
+    ;;
+esac
+
+# ----- Check 7: recommendedNextActions for happy path -----
+if grep -q "recommendedNextActions" "$ADAPTER"; then
+  record PASS next-actions "recommendedNextActions present."
+else
+  case "$ADAPTER_LOCAL" in
+    auth) ;;  # not required for read-only state checks
+    *) record WARN next-actions "Adapter does not populate recommendedNextActions. Agents need this to chain calls." ;;
+  esac
+fi
+
+# ----- Check 8: pagination shape for list adapters -----
+case "$ADAPTER_LOCAL" in
+  search|order-list|cart-list)
+    if grep -q "pagination" "$ADAPTER"; then
+      record PASS pagination "List adapter declares pagination object."
+    else
+      record WARN pagination "List adapters must return a 'pagination' object. See contract for shape."
+    fi
+    ;;
+esac
+
+# ----- Output -----
+if [[ "$JSON_OUT" == 1 ]]; then
+  printf '{\n  "adapter": "%s",\n  "domain": "%s",\n  "summary": {"pass": %d, "warn": %d, "fail": %d},\n  "results": [\n' \
+    "$ADAPTER" "$DOMAIN" "$PASS" "$WARN" "$FAIL"
+  first=1
+  for entry in "${RESULTS[@]+"${RESULTS[@]}"}"; do
+    IFS=$'\t' read -r level check msg <<<"$entry"
+    [[ $first -eq 0 ]] && printf ',\n'
+    printf '    {"level": "%s", "check": "%s", "message": %s}' \
+      "$level" "$check" "$(printf '%s' "$msg" | jq -Rs .)"
+    first=0
+  done
+  printf '\n  ]\n}\n'
+else
+  printf '\n  bb-eval  %s\n' "$ADAPTER"
+  printf '  domain   %s\n' "$DOMAIN"
+  printf '  adapter  %s\n\n' "${ADAPTER_LOCAL:-?}"
+  for entry in "${RESULTS[@]+"${RESULTS[@]}"}"; do
+    IFS=$'\t' read -r level check msg <<<"$entry"
+    case "$level" in
+      PASS) printf '  \033[32m✓\033[0m  %-22s %s\n' "$check" "$msg" ;;
+      WARN) printf '  \033[33m!\033[0m  %-22s %s\n' "$check" "$msg" ;;
+      FAIL) printf '  \033[31m✗\033[0m  %-22s %s\n' "$check" "$msg" ;;
+    esac
+  done
+  printf '\n  %d pass  %d warn  %d fail\n\n' "$PASS" "$WARN" "$FAIL"
+fi
+
+[[ $FAIL -eq 0 ]] && exit 0 || exit 1
