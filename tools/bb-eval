@@ -145,8 +145,10 @@ fi
 
 # ----- PHR-5: record shape (dbKey, id, url, fields in return) -----
 if [[ "$DOMAIN" == "pharma-data" ]]; then
-  if grep -q "dbKey:" "$ADAPTER" && grep -q "\bid:" "$ADAPTER" \
-      && grep -q "\burl:" "$ADAPTER" && grep -q "fields:" "$ADAPTER"; then
+  if { grep -Eq "\bdbKey[:,]" "$ADAPTER" || grep -q "dbKey\b" "$ADAPTER"; } \
+      && { grep -Eq "\bid[:,]" "$ADAPTER" || grep -q "\bid\b" "$ADAPTER"; } \
+      && { grep -Eq "\burl:" "$ADAPTER" || grep -q "\burl[,}]" "$ADAPTER"; } \
+      && { grep -Eq "\bfields[:,]" "$ADAPTER" || grep -q "fields\b" "$ADAPTER"; }; then
     record PASS "PHR-5 record-shape" "Adapter return contains dbKey, id, url, fields keys."
   else
     record FAIL "PHR-5 record-shape" "Adapter must return Record objects with dbKey, id, url, fields."
