@@ -63,6 +63,38 @@ Edit `tools/bb-eval`. The structure is:
 
 A new check is one block of shell that calls `record`. Keep checks fast (no network, no sub-shell loops over large files).
 
+## Domain detection: ecommerce vs pharma-data
+
+`bb-eval` recognizes two contract domains and routes the checker set accordingly:
+
+| Heuristic match | Domain |
+|---|---|
+| `*yaozh.com*`, `*data.yaozh.com*` | `pharma-data` |
+| `*ysbang*`, `*jd.com*`, `*pdd.com*`, `*taobao.com*`, `*111.com.cn*`, `*1yaocheng*`, `*tmall*`, `*yaoex*`, `*fangkuaiyi*` | `ecommerce` |
+
+Pass `--domain pharma-data` to force. If neither heuristic matches and no flag is given, `domain = "unknown"` and most checks are skipped.
+
+### pharma-data checks (PHR-* prefix)
+
+Added 2026-06-16 for `db.yaozh.com` work. Twelve checks:
+
+| Check | Level | What it verifies |
+|---|---|---|
+| `PHR-1 domain-set` | FAIL | `@meta.domain` is `'pharma-data'`. |
+| `PHR-2 dbkey-declared` | FAIL | `@meta.dbKey` is present and non-null. |
+| `PHR-3 url-constant` | FAIL | First 50 lines contain a URL with the `/<dbKey>` slug. |
+| `PHR-4 list-function` / `PHR-4 item-function` | FAIL | Adapter exports `async function list` and `async function item`. Skipped if `kind: helper`. |
+| `PHR-5 record-shape` | FAIL | Return shape includes `dbKey`, `id`, `url`, `fields` keys. Accepts shorthand properties (`id,` not `id:`). Skipped for helpers. |
+| `PHR-6 id-detect` | WARN | `item()` contains ID-type discriminator (numeric vs base64). Static check — may WARN if logic is dynamic. |
+| `PHR-7 auth-status` | FAIL | Return includes `authStatus` field. |
+| `PHR-8 canonical-name` | FAIL / WARN | Adapter name must be in P0/P1 set (`auth`, `list`, `item`, `search`, `export`, `related`) — never `*-list` or `*-detail`. Helper `yaozh-auth` is allowed. WARN for dbKey names not in the canonical set. |
+| `PHR-9 helper-name` | FAIL | `yaozh-auth` must set `@meta.kind = "helper"`. |
+| `PHR-10 no-creds` | FAIL | No hardcoded `password=`, `api_key=`, `Bearer <token>`. |
+| `PHR-readonly` | FAIL | `readOnly: true` is required for pharma-data. |
+| `meta-field-dbKey` / `meta-field-authStatus` | FAIL | Pharma-data requires these `@meta` fields. |
+
+**Helpers** (`kind: helper`) automatically skip PHR-4, PHR-5, PHR-6, PHR-7 — these checks assume a per-database adapter with `list`/`item` shape.
+
 ## When `bb-eval` rejects an adapter you believe is correct
 
 The contract is wrong, the check is wrong, or the adapter is wrong — diagnose in that order:

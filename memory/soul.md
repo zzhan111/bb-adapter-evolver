@@ -261,3 +261,74 @@ bb-browser daemon tokens are **32-char hex without hyphens**. UUID format with h
 - Phase 3 (cross-site validation) completed via yaoex cross-validation with ysbang
 - 1yaocheng (111.com.cn) is B2C, not in Phase 3 scope
 - Contract v1 proven across two independent B2B pharmaceutical sites
+
+---
+
+## 2026-06-16 — db.yaozh.com (药智数据) pharma-data 新合同域 + 6+1 adapter 套件
+
+### 用户的目标重定义
+
+最初用户说"接下来为 https://db.yaozh.com/ 药智数据网 全套 adapters"。recon 一做发现 db.yaozh.com 不是电商，而是医药数据情报站（药品注册、临床试验、定价、市场行为、监管公告……）。**没有购物车/订单/价格加解密。** 硬套 ecommerce v1 contract 会 FAIL 一片。
+
+跟用户走完 brainstorming 决定：
+- 新建合同域 `pharma-data`（不复用、不扩展 ecommerce）
+- 双轨文档：spec → `docs/superpowers/specs/`，contract → `docs/claude/contracts/pharma-data/v1.md`
+- 6+1 adapter 方案：6 个数据查询 adapter + 1 个 cookie 注入 helper
+- 公开优先、cookie 注入、不做自动登录（守 AGENTS.md #5）
+
+设计 spec 见 `docs/superpowers/specs/2026-06-16-pharma-data-design.md`。决策文档见 `docs/claude/decisions/2026-06-16-why-pharma-data-contract.md`。
+
+### bb-eval 扩展
+
+`tools/bb-eval` 加了 `--domain pharma-data` 选项 + 10 个 PHR-* 检查项（PHR-1 domain-set, PHR-2 dbkey-declared, PHR-3 url-constant, PHR-4 list-function/item-function, PHR-5 record-shape, PHR-6 id-detect, PHR-7 auth-status, PHR-8 canonical-name, PHR-9 helper-name, PHR-10 no-creds）。helper adapter (kind:helper) 自动跳过 list/item/record 检查。
+
+修复了两个 bb-eval bug（学到的教训）：
+1. **PHR-5 过严**：原版只匹配 `id: url: dbKey:`，不接受 shorthand `id,` → 放宽
+2. **PHR-3 引用 `$HEADER`** 在它被定义之前 → 重排到 Check 1 之后
+
+### 6+1 adapter 产出（bb-eval 152 pass / 0 fail）
+
+| Adapter | 鉴权 | 数据 | 详情 ID | keyword 参数 |
+|---|---|---|---|---|
+| yaopinjiage | public | 660,613 | 数字 | `name` |
+| policies | public | 27,203 | 数字 | `policies_title` |
+| ypzl | public | ~10 | base64 | `name` |
+| ypxs | soft_vip | 35 | base64 | `cname|brandname|name|brandnamecn` |
+| dijia | public | 32 | base64 | `name` |
+| yaopinzhongbiao | hard_wall | 1,986,638 | 药品名 | `comprehensivesearchcontent` |
+| yaozh-auth | helper | — | — | — |
+
+菜单数字（"53 条政策"）严重过时——实际 27,203 条；"4 条低价药"实际 32 条。**别信菜单估算，以 live 抓取为准。**
+
+### 实战中学到的（写给未来的 agent）
+
+1. **每个 DB 用不同的 keyword 字段名**——绝不能假设通用。`scrme_name` 是模板里的默认值，**所有 6 个 adapter 都失效**。正确做法：读 listing 页面的 `<form>` 找 `name="..."` input。侦察阶段必须做。
+2. **`is_search=1` 隐藏 flag 必填**——GET 请求不加这个 flag，过滤参数会被忽略。
+3. **ID 编码两种**：数字（旧库：policies/yaopinjiage）vs base64（新库：ypzl/dijia/customs/ypxs）。模板的 ID discriminator `isNumeric || isBase64` 两种都接受。
+4. **soft_vip 字段值是字面 `"查看"`**——adapter 检测到该值就标 `vipGatedFields` + 清空值，绝不编造。
+5. **通用字段提取算法 v7（最终稳定版）**：
+   - selector: `table.table.zjlsearFromVal tbody tr`
+   - cells: 用 `th, td` 拿全部（包括 th 标题列）
+   - titleCellIdx = 含 `a[href*=".html"]` 的 cell
+   - titleHeaderIdx = 在 titleHeaderNames 数组里找 headers[] 匹配
+   - offset = linkCellIdx - titleHeaderIdx，剩下 cells 按位置映射到 headers
+6. **yaopinzhongbiao 是硬登录墙**——`authStatus: hard_wall`，adapter 在 list() 前查 `table.table:not(.responsivetable-clone)` 是否存在，不存在返回 `HARD_LOGIN_WALL` + 指向 yaozh-auth。
+7. **yaopinzhongbiao 详情链外部政府站**（scyxzbcg.cn 等），adapter 把外部 URL 推荐给调用者，自己不抓外部页。
+8. **菜单估算 vs 实际条数差距巨大**：必须 live 抓取验证，不能信 recon 报告里的初始数字。
+
+### Phase 4 conditional status
+
+yaoex P0 已满，ysbang 已有 9/9。现在 yaozh 6+1（其中 yaopinzhongbiao gated）。Phase 4 (darwinian_evolver) 仍是 conditional —— bb-eval 现在覆盖两个 domain（ecommerce 12 checks + pharma-data 10 checks），fitness signal 比 Phase 1 强得多，**但还没触发 single-shot success rate < 30% 的标准**。当前所有 6+1 都是 SKILL-driven 一次性通过的。
+
+### 仍然未做（明确边界）
+
+- **yaopinzhongbiao 详情**：URL 指向外部政府站点。adapter 只返回链接，不抓外部页。
+- **yaozh-auth**：静态通过，未实测（需要真实 cookie 验证）。
+- **drugad 数据库**：菜单有但详情链接是 `#`，未实现（v2 候选）。
+- **db.yaozh.com 其他子域**（/zhuce 注册、/linchuangshiyan 临床、/company_info 企业 等）—— recon 阶段已识别，但本轮按"市场信息"子域限定。
+
+### Git 备份
+
+- 备份 tag: `v1.0-pre-yaozh`（已 push origin），指向 Phase 3 baseline commit `9bbf896`
+- 全程 commit history 推送 `zzhan111/bb-adapter-evolver` main 分支
+- 回滚命令：`git reset --hard v1.0-pre-yaozh`
