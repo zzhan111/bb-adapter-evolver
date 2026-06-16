@@ -3,7 +3,7 @@
 # bb-eval — score a bb-browser adapter against the contract for its domain.
 #
 # Usage:
-#   bb-eval <path-to-adapter.js> [--domain ecommerce]
+#   bb-eval <path-to-adapter.js> [--domain ecommerce|pharma-data]
 #   bb-eval <path-to-adapter.js> --json
 #
 # Exit code: 0 if all FAIL checks pass, 1 otherwise.
@@ -101,11 +101,22 @@ META_DOMAIN="$(meta_get '.domain')"
 ADAPTER_LOCAL="${NAME##*/}"
 
 if [[ -z "$DOMAIN" ]]; then
-  # heuristic: ecommerce hosts/keywords
+  # heuristic: pharma-data hosts (checked first for specificity)
   case "$META_DOMAIN" in
+    *yaozh.com*|*data.yaozh.com*) DOMAIN=pharma-data ;;
     *ysbang*|*jd.com*|*pdd.com*|*taobao.com*|*111.com.cn*|*1yaocheng*|*tmall*|*yaoex*|*fangkuaiyi*) DOMAIN=ecommerce ;;
     *) DOMAIN=unknown ;;
   esac
+fi
+
+# ----- PHR-1: domain must be pharma-data if --domain pharma-data -----
+if [[ "$DOMAIN" == "pharma-data" ]]; then
+  META_DOMAIN_VAL="$(meta_get '.domain')"
+  if [[ "$META_DOMAIN_VAL" == "pharma-data" ]]; then
+    record PASS "PHR-1 domain-set" "@meta.domain is 'pharma-data'."
+  else
+    record FAIL "PHR-1 domain-set" "@meta.domain must be 'pharma-data', got: ${META_DOMAIN_VAL:-empty}"
+  fi
 fi
 
 # ----- Check 1: URL constant in first 50 lines -----
