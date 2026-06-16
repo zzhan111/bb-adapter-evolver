@@ -12,7 +12,7 @@ You are about to write or modify a bb-browser adapter. **Stop and read this in f
 These are derived from `~/.openclaw/workspace/bb-adapter-evolver/AGENTS.md`. Violating any of them means the adapter will fail `bb-eval` and will not be merged.
 
 1. **Declare the destination URL up front.** First 50 lines must contain a constant naming the canonical entry URL. No exceptions.
-2. **Do not invent the adapter granularity.** If the site is ecommerce, your adapter must be one of the nine P0 names in `docs/claude/contracts/ecommerce/v1.md`, or a justified P1 entry. Do **not** create `search-by-X`. Filters belong inside `search`.
+2. **Do not invent the adapter granularity.** If the site is ecommerce, your adapter must be one of the nine P0 names in `docs/claude/contracts/ecommerce/v1.md`, or a justified P1 entry. If the site is pharma-data, your adapter must be `auth`, `list`, `item`, `search`, `export`, or `related`, with the adapter name matching the dbKey (e.g. `yaozh/yaopinjiage`). Do **not** create `search-by-X` or `<dbKey>-list` variants. Filters belong inside `list` arguments. Details belong inside `item`.
 3. **Assume tier-2 or tier-3.** Only fall back to tier-1 (cookies + naive fetch) when the page is genuinely anonymous and you have proven it via network capture.
 4. **Capture before you code.** If you have not run `bb-browser network --with-body` against the actual logged-in user flow, you do not know the real endpoint. The biggest waste in past adapters was guessing endpoints (see `methodology/reverse-engineering/playbook.md` and `~/.bb-browser/docs/solutions/documentation-gaps/jike-following-feed-adapter.md`).
 5. **When login is required, stop and ask the human.** Do not paper over it with stubbed cookies. The user wants to be in the loop for any session-dependent action.
@@ -124,7 +124,7 @@ You must stop at these points and explicitly ask the human to act:
 ## Reading order before authoring
 
 1. This file (you're here)
-2. `~/.openclaw/workspace/bb-adapter-evolver/docs/claude/contracts/<domain>/v1.md` for your domain
+2. `~/.openclaw/workspace/bb-adapter-evolver/docs/claude/contracts/<domain>/v1.md` for your domain (ecommerce or pharma-data)
 3. `~/.openclaw/workspace/bb-adapter-evolver/docs/claude/methodology/reverse-engineering/playbook.md`
 4. The existing reference adapter for the same use case in another site (e.g. before writing `jd/search`, read `~/.bb-browser/sites/ysbang/adapters/search.js` for the constraint-tracking pattern)
 5. `~/.bb-browser/docs/solutions/documentation-gaps/` for any prior lessons on the site or pattern you're touching
