@@ -129,15 +129,6 @@ if [[ "$DOMAIN" == "pharma-data" ]]; then
   fi
 fi
 
-# ----- PHR-3: URL constant contains dbKey slug -----
-if [[ "$DOMAIN" == "pharma-data" && -n "$DBKEY" && "$DBKEY" != "null" ]]; then
-  if printf '%s' "$HEADER" | grep -Eq "https?://[^'\"]*/${DBKEY}"; then
-    record PASS "PHR-3 url-constant" "URL constant contains /${DBKEY}."
-  else
-    record FAIL "PHR-3 url-constant" "First 50 lines must contain a URL with /${DBKEY} slug."
-  fi
-fi
-
 # ----- PHR-4: list and item exported -----
 if [[ "$DOMAIN" == "pharma-data" ]]; then
   if grep -q "async function list\b" "$ADAPTER"; then
@@ -219,6 +210,15 @@ elif printf '%s' "$HEADER" | grep -Eq "https?://[a-zA-Z0-9.-]+"; then
   record WARN url-declared "URL appears in first 50 lines but not as a named constant. Prefer 'const HOME_URL = ...'."
 else
   record FAIL url-declared "No destination URL constant in first 50 lines. Required: const HOME_URL = 'https://...';"
+fi
+
+# ----- PHR-3: URL constant contains dbKey slug -----
+if [[ "$DOMAIN" == "pharma-data" && -n "$DBKEY" && "$DBKEY" != "null" ]]; then
+  if printf '%s' "$HEADER" | grep -Eq "https?://[^'\"]*/${DBKEY}"; then
+    record PASS "PHR-3 url-constant" "URL constant contains /${DBKEY}."
+  else
+    record FAIL "PHR-3 url-constant" "First 50 lines must contain a URL with /${DBKEY} slug."
+  fi
 fi
 
 # ----- Check 2: @meta required fields -----
