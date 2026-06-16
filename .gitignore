@@ -19,3 +19,13 @@ __pycache__/
 # Environment
 .env
 .env.*
+
+# Temporary / scratch files at repo root
+# Convention used during development: leading-underscore filenames
+# are throwaway scripts (e.g. _fix_yaopinjiage.py, _test_eval.py)
+# and must not be committed.
+/_*.py
+/_*.sh
+/_*.js
+/_*.md
+/_*.txt
