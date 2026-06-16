@@ -119,6 +119,98 @@ if [[ "$DOMAIN" == "pharma-data" ]]; then
   fi
 fi
 
+# ----- PHR-2: dbkey declared -----
+if [[ "$DOMAIN" == "pharma-data" ]]; then
+  DBKEY="$(meta_get '.dbKey')"
+  if [[ -n "$DBKEY" && "$DBKEY" != "null" ]]; then
+    record PASS "PHR-2 dbkey-declared" "@meta.dbKey is '${DBKEY}'."
+  else
+    record FAIL "PHR-2 dbkey-declared" "@meta.dbKey is missing."
+  fi
+fi
+
+# ----- PHR-3: URL constant contains dbKey slug -----
+if [[ "$DOMAIN" == "pharma-data" && -n "$DBKEY" && "$DBKEY" != "null" ]]; then
+  if printf '%s' "$HEADER" | grep -Eq "https?://[^'\"]*/${DBKEY}"; then
+    record PASS "PHR-3 url-constant" "URL constant contains /${DBKEY}."
+  else
+    record FAIL "PHR-3 url-constant" "First 50 lines must contain a URL with /${DBKEY} slug."
+  fi
+fi
+
+# ----- PHR-4: list and item exported -----
+if [[ "$DOMAIN" == "pharma-data" ]]; then
+  if grep -q "async function list\b" "$ADAPTER"; then
+    record PASS "PHR-4 list-function" "Adapter exports a 'list' function."
+  else
+    record FAIL "PHR-4 list-function" "Adapter must export an 'async function list'."
+  fi
+  if grep -q "async function item\b" "$ADAPTER"; then
+    record PASS "PHR-4 item-function" "Adapter exports an 'item' function."
+  else
+    record FAIL "PHR-4 item-function" "Adapter must export an 'async function item'."
+  fi
+fi
+
+# ----- PHR-5: record shape (dbKey, id, url, fields in return) -----
+if [[ "$DOMAIN" == "pharma-data" ]]; then
+  if grep -q "dbKey:" "$ADAPTER" && grep -q "\bid:" "$ADAPTER" \
+      && grep -q "\burl:" "$ADAPTER" && grep -q "fields:" "$ADAPTER"; then
+    record PASS "PHR-5 record-shape" "Adapter return contains dbKey, id, url, fields keys."
+  else
+    record FAIL "PHR-5 record-shape" "Adapter must return Record objects with dbKey, id, url, fields."
+  fi
+fi
+
+# ----- PHR-6: ID discriminator (numeric vs base64) -----
+if [[ "$DOMAIN" == "pharma-data" ]]; then
+  if grep -qE "(isNumeric|isBase64|/\\^\?\\\\d\\+\\\$/|\\.test\\(.*\\d|Number\\(.*id|base64.*test|test.*base64)" "$ADAPTER"; then
+    record PASS "PHR-6 id-detect" "item() function contains ID-type discrimination logic."
+  else
+    record WARN "PHR-6 id-detect" "item() should detect numeric vs base64 ID format. Static check cannot verify runtime behavior."
+  fi
+fi
+
+# ----- PHR-7: authStatus field -----
+if [[ "$DOMAIN" == "pharma-data" ]]; then
+  if grep -q "authStatus" "$ADAPTER"; then
+    record PASS "PHR-7 auth-status" "Adapter returns authStatus field."
+  else
+    record FAIL "PHR-7 auth-status" "Every Record/Detail must include authStatus: 'public'|'soft_vip'|'hard_wall'."
+  fi
+fi
+
+# ----- PHR-8: canonical adapter names -----
+if [[ "$DOMAIN" == "pharma-data" ]]; then
+  case "$ADAPTER_LOCAL" in
+    auth|list|item|search|export|related|yaozh-auth)
+      record PASS "PHR-8 canonical-name" "'${ADAPTER_LOCAL}' is a canonical pharma-data adapter name." ;;
+    *-list|*-detail|*-list.js|*-detail.js)
+      record FAIL "PHR-8 canonical-name" "Adapter names like '${ADAPTER_LOCAL}' are forbidden. One adapter per dbKey, exporting list()+item()." ;;
+    *)
+      record WARN "PHR-8 canonical-name" "'${ADAPTER_LOCAL}' is not in the canonical P0/P1 set for pharma-data." ;;
+  esac
+fi
+
+# ----- PHR-9: helper kind declaration -----
+if [[ "$DOMAIN" == "pharma-data" && "$ADAPTER_LOCAL" == "yaozh-auth" ]]; then
+  KIND="$(meta_get '.kind')"
+  if [[ "$KIND" == "helper" ]]; then
+    record PASS "PHR-9 helper-name" "yaozh-auth declares kind: 'helper'."
+  else
+    record FAIL "PHR-9 helper-name" "Cross-cutting helper 'yaozh-auth' must set @meta.kind to 'helper'."
+  fi
+fi
+
+# ----- PHR-10: no hardcoded credentials -----
+if [[ "$DOMAIN" == "pharma-data" ]]; then
+  if grep -qP "(password\s*=|passwd\s*=|api_key\s*=|secret\s*=|Bearer\s+[A-Za-z0-9+/=]{20,})" "$ADAPTER"; then
+    record FAIL "PHR-10 no-creds" "Adapter source may contain hardcoded credentials. Remove or read from env."
+  else
+    record PASS "PHR-10 no-creds" "No hardcoded credentials detected."
+  fi
+fi
+
 # ----- Check 1: URL constant in first 50 lines -----
 HEADER="$(head -n 50 "$ADAPTER")"
 if printf '%s' "$HEADER" | grep -Eq "(const|let|var)\s+[A-Z_]*URL[A-Z_]*\s*=\s*['\"]https?://"; then
@@ -138,6 +230,17 @@ if [[ -n "$META_JSON" ]]; then
       record FAIL "meta-field-${field}" "@meta is missing required field: ${field}"
     fi
   done
+
+  # pharma-data: dbKey and authStatus are required @meta fields
+  if [[ "$DOMAIN" == "pharma-data" ]]; then
+    for pfield in dbKey authStatus; do
+      if meta_has "$pfield"; then
+        record PASS "meta-field-${pfield}" "@meta.${pfield} is present."
+      else
+        record FAIL "meta-field-${pfield}" "@meta is missing required field: ${pfield} (pharma-data contract)"
+      fi
+    done
+  fi
 
   # name must be <site>/<adapter>
   if [[ -n "$NAME" && "$NAME" != */* ]]; then
@@ -176,7 +279,17 @@ if [[ "$DOMAIN" == "ecommerce" && -n "$ADAPTER_LOCAL" ]]; then
       record WARN unknown-name \
         "'${ADAPTER_LOCAL}' is not in the canonical P0/P1 set. Justify or rename."
       ;;
-  esac
+	  esac
+fi
+
+# ----- Check 3b: pharma-data readOnly enforcement -----
+if [[ "$DOMAIN" == "pharma-data" && -n "$META_JSON" ]]; then
+  RO="$(meta_get '.readOnly')"
+  if [[ "$RO" != "true" ]]; then
+    record FAIL "PHR-readonly" "Pharma-data adapters must be readOnly: true. Got: ${RO:-empty}"
+  else
+    record PASS "PHR-readonly" "Adapter declares readOnly: true (pharma-data requirement)."
+  fi
 fi
 
 # ----- Check 4: write-capable adapter declares readOnly: false -----
