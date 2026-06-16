@@ -129,22 +129,27 @@ if [[ "$DOMAIN" == "pharma-data" ]]; then
   fi
 fi
 
-# ----- PHR-4: list and item exported -----
+# ----- PHR-4: list and item exported (skip for helpers) -----
 if [[ "$DOMAIN" == "pharma-data" ]]; then
-  if grep -q "async function list\b" "$ADAPTER"; then
-    record PASS "PHR-4 list-function" "Adapter exports a 'list' function."
+  KIND="$(meta_get '.kind')"
+  if [[ "$KIND" == "helper" ]]; then
+    record PASS "PHR-4 helper-structure" "Helper adapter (kind: helper) does not require list/item."
   else
-    record FAIL "PHR-4 list-function" "Adapter must export an 'async function list'."
-  fi
-  if grep -q "async function item\b" "$ADAPTER"; then
-    record PASS "PHR-4 item-function" "Adapter exports an 'item' function."
-  else
-    record FAIL "PHR-4 item-function" "Adapter must export an 'async function item'."
+    if grep -q "async function list\b" "$ADAPTER"; then
+      record PASS "PHR-4 list-function" "Adapter exports a 'list' function."
+    else
+      record FAIL "PHR-4 list-function" "Adapter must export an 'async function list'."
+    fi
+    if grep -q "async function item\b" "$ADAPTER"; then
+      record PASS "PHR-4 item-function" "Adapter exports an 'item' function."
+    else
+      record FAIL "PHR-4 item-function" "Adapter must export an 'async function item'."
+    fi
   fi
 fi
 
-# ----- PHR-5: record shape (dbKey, id, url, fields in return) -----
-if [[ "$DOMAIN" == "pharma-data" ]]; then
+# ----- PHR-5: record shape (skip for helpers) -----
+if [[ "$DOMAIN" == "pharma-data" && "$KIND" != "helper" ]]; then
   if { grep -Eq "\bdbKey[:,]" "$ADAPTER" || grep -q "dbKey\b" "$ADAPTER"; } \
       && { grep -Eq "\bid[:,]" "$ADAPTER" || grep -q "\bid\b" "$ADAPTER"; } \
       && { grep -Eq "\burl:" "$ADAPTER" || grep -q "\burl[,}]" "$ADAPTER"; } \
@@ -155,8 +160,8 @@ if [[ "$DOMAIN" == "pharma-data" ]]; then
   fi
 fi
 
-# ----- PHR-6: ID discriminator (numeric vs base64) -----
-if [[ "$DOMAIN" == "pharma-data" ]]; then
+# ----- PHR-6: ID discriminator (skip for helpers) -----
+if [[ "$DOMAIN" == "pharma-data" && "$KIND" != "helper" ]]; then
   if grep -qE "(isNumeric|isBase64|/\\^\?\\\\d\\+\\\$/|\\.test\\(.*\\d|Number\\(.*id|base64.*test|test.*base64)" "$ADAPTER"; then
     record PASS "PHR-6 id-detect" "item() function contains ID-type discrimination logic."
   else
@@ -164,8 +169,8 @@ if [[ "$DOMAIN" == "pharma-data" ]]; then
   fi
 fi
 
-# ----- PHR-7: authStatus field -----
-if [[ "$DOMAIN" == "pharma-data" ]]; then
+# ----- PHR-7: authStatus field (skip for helpers) -----
+if [[ "$DOMAIN" == "pharma-data" && "$KIND" != "helper" ]]; then
   if grep -q "authStatus" "$ADAPTER"; then
     record PASS "PHR-7 auth-status" "Adapter returns authStatus field."
   else
