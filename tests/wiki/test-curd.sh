@@ -200,12 +200,15 @@ fi
 # --- Test 15: regenerate-index -----------------------------------------
 run
 note "test 15: regenerate-index preserves content"
-# Snapshot a checksum of the trailing content
-BEFORE_HASH=$(tail -n +20 docs/claude/wiki/README.md | md5sum | cut -d' ' -f1)
+# Snapshot a checksum of the trailing content. Strip CR first to be CRLF/LF-agnostic.
+content_hash() {
+  tail -n +20 docs/claude/wiki/README.md | tr -d '\r' | md5sum | cut -d' ' -f1
+}
+BEFORE_HASH=$(content_hash)
 "$CLI" regenerate-index 2>/dev/null
-AFTER_HASH=$(tail -n +20 docs/claude/wiki/README.md | md5sum | cut -d' ' -f1)
+AFTER_HASH=$(content_hash)
 if [[ "$BEFORE_HASH" != "$AFTER_HASH" ]]; then
-  ko "regenerate-index" "trailing content changed unexpectedly"
+  ko "regenerate-index" "trailing content changed unexpectedly (before=$BEFORE_HASH after=$AFTER_HASH)"
 else
   if grep -q "## Sections" docs/claude/wiki/README.md \
      && grep -q "| Section | What it covers |" docs/claude/wiki/README.md; then
