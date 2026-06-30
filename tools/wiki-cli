@@ -1,0 +1,522 @@
+#!/usr/bin/env bash
+#
+# wiki-cli — CRUD tool for docs/claude/wiki/
+#
+# Usage:
+#   wiki-cli list
+#   wiki-cli get <path-or-slug>
+#   wiki-cli search <term>
+#   wiki-cli add <path> --title "..." --type <type> [--body-file <f> | --body <s>]
+#   wiki-cli edit <path> --set <key>=<value> [...]
+#   wiki-cli edit <path> --append <markdown>
+#   wiki-cli edit <path> --replace <old> <new>
+#   wiki-cli move <old-path> <new-path>
+#   wiki-cli delete <path> [--force]
+#   wiki-cli regenerate-index
+#   wiki-cli frontmatter <path>
+#   wiki-cli validate
+#   wiki-cli references <path>
+#   wiki-cli help
+#
+# Exit code: 0 success, 1 generic failure, 2 usage error, 3 validation failure.
+#
+# Conventions enforced (see docs/claude/skills/wiki-curator/SKILL.md):
+#   - Pages live under docs/claude/wiki/.
+#   - Frontmatter is YAML between leading and trailing "---" lines.
+#   - Required frontmatter keys: title, type, last_updated.
+#   - delete refuses if page is still referenced unless --force.
+#   - Index (README.md) is regenerated, not hand-edited.
+
+set -u
+
+REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null)"
+# On WSL, git returns the Windows UNC path which breaks relative-path resolution
+# inside the script (e.g. `../../../memory/soul.md`). Prefer the shell pwd if it
+# resolves; otherwise fall back to git's value.
+if [[ -n "${PWD:-}" && -d "${PWD}" && -d "${PWD}/docs/claude/wiki" ]]; then
+  REPO_ROOT="${PWD}"
+fi
+WIKI_ROOT="${REPO_ROOT}/docs/claude/wiki"
+README="${WIKI_ROOT}/README.md"
+
+# Allow override for tests
+WIKI_ROOT="${WIKI_CLI_ROOT:-$WIKI_ROOT}"
+README="${WIKI_ROOT}/README.md"
+
+log()  { printf '%s\n' "$*" >&2; }
+die()  { log "wiki-cli: $*"; exit 1; }
+usage(){ log "wiki-cli: $*"; exit 2; }
+
+# ----------------------------------------------------------------------------
+# helpers
+# ----------------------------------------------------------------------------
+
+# Resolve a path or slug to an absolute file path under WIKI_ROOT.
+# Accepts:
+#   - "glossary"                   -> glossary.md
+#   - "concepts/adapter"           -> concepts/adapter.md
+#   - "docs/claude/wiki/glossary.md"
+#   - absolute path
+resolve_path() {
+  local arg="$1"
+  [[ -z "$arg" ]] && usage "path required"
+
+  # Already absolute or starts with repo path
+  if [[ -f "$arg" ]]; then
+    echo "$arg"
+    return 0
+  fi
+
+  # Strip leading repo prefix if present
+  local rel="${arg#${REPO_ROOT}/}"
+  rel="${rel#docs/claude/wiki/}"
+
+  # Try with .md suffix
+  if [[ -f "${WIKI_ROOT}/${rel}.md" ]]; then
+    echo "${WIKI_ROOT}/${rel}.md"
+    return 0
+  fi
+
+  # Try without suffix (already .md)
+  if [[ -f "${WIKI_ROOT}/${rel}" ]]; then
+    echo "${WIKI_ROOT}/${rel}"
+    return 0
+  fi
+
+  return 1
+}
+
+# Print frontmatter keys as `key=value` per line. Naive parser; sufficient for
+# our well-formed files (no `:` in values, no multiline values).
+parse_frontmatter() {
+  local file="$1"
+  awk '
+    BEGIN { in_fm=0 }
+    /^---[[:space:]]*$/ {
+      if (in_fm) { in_fm=0; exit }
+      else { in_fm=1; next }
+    }
+    in_fm {
+      # strip optional quotes
+      gsub(/^[[:space:]]+|[[:space:]]+$/, "")
+      n = index($0, ":")
+      if (n > 0) {
+        k = substr($0, 1, n - 1)
+        v = substr($0, n + 1)
+        gsub(/^[[:space:]]+|[[:space:]]+$/, "", k)
+        gsub(/^["'"'"']|["'"'"']$/, "", v)
+        gsub(/^[[:space:]]+|[[:space:]]+$/, "", v)
+        print k "=" v
+      }
+    }
+  ' "$file"
+}
+
+# Validate that a file has a parseable frontmatter with required keys.
+validate_frontmatter() {
+  local file="$1"
+  local issues=0
+
+  if [[ ! -f "$file" ]]; then
+    log "FAIL  not-a-file  $file does not exist"
+    return 1
+  fi
+
+  local first_line
+  first_line="$(head -n 1 "$file" 2>/dev/null || true)"
+  if [[ "$first_line" != "---" ]]; then
+    log "FAIL  frontmatter-missing  $file does not start with ---"
+    issues=$((issues + 1))
+  fi
+
+  local fm
+  fm="$(parse_frontmatter "$file" || true)"
+  local title="" type="" last_updated=""
+  while IFS='=' read -r k v; do
+    case "$k" in
+      title) title="$v" ;;
+      type) type="$v" ;;
+      last_updated) last_updated="$v" ;;
+    esac
+  done <<< "$fm"
+
+  [[ -z "$title" ]] && { log "FAIL  frontmatter-title-missing  $file"; issues=$((issues + 1)); }
+  [[ -z "$type" ]] && { log "FAIL  frontmatter-type-missing  $file"; issues=$((issues + 1)); }
+  [[ -z "$last_updated" ]] && { log "FAIL  frontmatter-last_updated-missing  $file"; issues=$((issues + 1)); }
+
+  if (( issues == 0 )); then
+    log "PASS  frontmatter  $file"
+  fi
+  return $issues
+}
+
+# Find all pages that reference the given path. Match forms:
+#   (label)(../concepts/envelope.md)
+#   (label)(concepts/envelope.md)
+#   (label)(docs/claude/wiki/concepts/envelope.md)
+find_references() {
+  local target="$1"
+  local rel="${target#${WIKI_ROOT}/}"
+  local basename
+  basename="$(basename "$target" .md)"
+
+  # Grep all .md files under wiki root for the relative path or basename.
+  # Output: list of files that reference it.
+  ( cd "$WIKI_ROOT" && \
+    grep -rl --include='*.md' -F "$rel" . 2>/dev/null \
+    | grep -v "^./$(basename "$target")$" \
+  )
+  # Also match the bare basename (filename without path).
+  ( cd "$WIKI_ROOT" && \
+    grep -rl --include='*.md' -F "$basename" . 2>/dev/null \
+    | grep -v "^./$(basename "$target")$" \
+  ) || true
+}
+
+# List all wiki pages with their parsed title.
+list_pages() {
+  printf 'PATH\tTITLE\tTYPE\n'
+  while IFS= read -r -d '' f; do
+    local title="" type=""
+    while IFS='=' read -r k v; do
+      case "$k" in
+        title) title="$v" ;;
+        type) type="$v" ;;
+      esac
+    done < <(parse_frontmatter "$f")
+    printf '%s\t%s\t%s\n' "${f#${WIKI_ROOT}/}" "$title" "$type"
+  done < <(find "$WIKI_ROOT" -type f -name '*.md' -print0 | sort -z)
+}
+
+# ----------------------------------------------------------------------------
+# commands
+# ----------------------------------------------------------------------------
+
+cmd_list() {
+  list_pages
+}
+
+cmd_get() {
+  local target="$1"
+  local file
+  file="$(resolve_path "$target")" || usage "no such page: $target"
+  cat "$file"
+}
+
+cmd_search() {
+  local term="$1"
+  [[ -z "$term" ]] && usage "search term required"
+  ( cd "$WIKI_ROOT" && grep -rn --include='*.md' -F "$term" . ) | head -200
+}
+
+cmd_add() {
+  local path="" title="" type="" body="" body_file="" today
+  today="$(date -u +%Y-%m-%d)"
+
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --title) title="$2"; shift 2 ;;
+      --type) type="$2"; shift 2 ;;
+      --body) body="$2"; shift 2 ;;
+      --body-file) body_file="$2"; shift 2 ;;
+      -*) usage "unknown flag: $1" ;;
+      *) path="$1"; shift ;;
+    esac
+  done
+
+  [[ -z "$path" ]] && usage "path required"
+  [[ -z "$title" ]] && usage "--title required"
+  [[ -z "$type" ]] && usage "--type required"
+
+  local file="${WIKI_ROOT}/${path%.md}.md"
+
+  if [[ -f "$file" ]]; then
+    die "refusing to overwrite existing page: $file (use 'edit' instead)"
+  fi
+
+  if [[ -n "$body_file" ]]; then
+    [[ -f "$body_file" ]] || die "body file not found: $body_file"
+    body="$(cat "$body_file")"
+  fi
+
+  if [[ -z "$body" ]]; then
+    body=$'\n## Overview\n\nDescribe what this page covers.\n'
+  fi
+
+  {
+    printf -- '---\n'
+    printf 'title: %s\n' "$title"
+    printf 'type: %s\n' "$type"
+    printf 'last_updated: %s\n' "$today"
+    printf -- '---\n\n'
+    printf '# %s\n\n' "$title"
+    printf '%s\n' "$body"
+  } > "$file"
+
+  log "added: $file"
+  validate_frontmatter "$file" >/dev/null
+}
+
+cmd_edit() {
+  local path="" mode="" key="" value="" append_str="" replace_old="" replace_new=""
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --set)
+        shift
+        # accept multiple key=value pairs
+        while [[ $# -gt 0 && "$1" != *"--"* ]]; do
+          local kv="$1"
+          local k="${kv%%=*}"
+          local v="${kv#*=}"
+          # also support key: value pairs (no =)
+          if [[ "$k" == "$kv" ]]; then
+            v="${kv#*:}"
+            v="${v#"${v%%[![:space:]]*}"}"
+          fi
+          if [[ -n "$key" ]]; then
+            # multi --set: queue via repeated calls
+            set_frontmatter_value "$path" "$k" "$v"
+          else
+            set_frontmatter_value "$path" "$k" "$v"
+          fi
+          shift
+        done
+        return $?
+        ;;
+      --append) mode="append"; append_str="$2"; shift 2 ;;
+      --replace) mode="replace"; replace_old="$2"; replace_new="$3"; shift 3 ;;
+      -*) usage "unknown flag: $1" ;;
+      *) path="$1"; shift ;;
+    esac
+  done
+
+  [[ -z "$path" ]] && usage "path required for edit"
+  local file
+  file="$(resolve_path "$path")" || usage "no such page: $path"
+
+  case "$mode" in
+    append)
+      [[ -z "$append_str" ]] && usage "--append requires a string"
+      printf '\n%s\n' "$append_str" >> "$file"
+      ;;
+    replace)
+      [[ -z "$replace_old" || -z "$replace_new" ]] && usage "--replace requires <old> <new>"
+      if ! grep -qF "$replace_old" "$file"; then
+        die "--replace: old string not found in $file"
+      fi
+      # awk for safe in-place replacement
+      awk -v old="$replace_old" -v new="$replace_new" '
+        { s = $0; if (index(s, old) > 0) { sub(old, new); print; next } print }
+      ' "$file" > "$file.tmp" && mv "$file.tmp" "$file"
+      ;;
+    *) usage "--set, --append, or --replace required" ;;
+  esac
+
+  # Always bump last_updated on edit.
+  local today
+  today="$(date -u +%Y-%m-%d)"
+  set_frontmatter_value "$file" last_updated "$today" || true
+  log "edited: $file"
+}
+
+# Helper used by cmd_edit --set. Idempotent.
+set_frontmatter_value() {
+  local file="$1" key="$2" value="$3"
+  [[ -z "$file" ]] && { log "wiki-cli: internal error: set_frontmatter_value called without file"; return 1; }
+  [[ -z "$key" ]] && { log "wiki-cli: internal error: set_frontmatter_value called without key"; return 1; }
+
+  file="$(resolve_path "$file")" || die "no such page: $file"
+
+  if ! grep -q "^${key}:" "$file"; then
+    # Insert after first --- line
+    awk -v k="$key" -v v="$value" '
+      /^---[[:space:]]*$/ && !done { print; getline; print; print k ": " v; done=1; next }
+      { print }
+    ' "$file" > "$file.tmp" && mv "$file.tmp" "$file"
+  else
+    # Replace existing key line, preserving other lines.
+    awk -v k="$key" -v v="$value" '
+      $0 ~ "^" k ":" { print k ": " v; next }
+      { print }
+    ' "$file" > "$file.tmp" && mv "$file.tmp" "$file"
+  fi
+}
+
+cmd_move() {
+  local old="$1" new="$2"
+  [[ -z "$old" || -z "$new" ]] && usage "move requires <old-path> <new-path>"
+
+  local old_file new_file
+  old_file="$(resolve_path "$old")" || die "no such page: $old"
+  new_file="${WIKI_ROOT}/${new%.md}.md"
+
+  [[ -f "$new_file" ]] && die "refusing to overwrite existing page: $new_file"
+
+  mkdir -p "$(dirname "$new_file")"
+  mv "$old_file" "$new_file"
+  log "moved: $old_file -> $new_file"
+
+  # Update internal links from old relative path to new relative path.
+  log "NOTE: links from other wiki pages still use the old path. Run 'wiki-cli validate' next."
+}
+
+cmd_delete() {
+  local path="" force=0
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --force) force=1; shift ;;
+      -*) usage "unknown flag: $1" ;;
+      *) path="$1"; shift ;;
+    esac
+  done
+  [[ -z "$path" ]] && usage "path required"
+
+  local file
+  file="$(resolve_path "$path")" || die "no such page: $path"
+
+  if [[ "$(basename "$file")" == "README.md" || "$(basename "$file")" == "changelog.md" ]]; then
+    die "refusing to delete wiki anchor file: $(basename "$file")"
+  fi
+
+  local refs
+  refs="$(find_references "$file")"
+
+  if [[ -n "$refs" && $force -eq 0 ]]; then
+    log "refusing to delete $file: still referenced by:"
+    echo "$refs" | sed 's/^/  /'
+    die "pass --force to delete anyway"
+  fi
+
+  rm "$file"
+  log "deleted: $file"
+}
+
+cmd_regenerate_index() {
+  [[ -f "$README" ]] || die "README.md not found at $README"
+
+  # Build the sections table by directory under wiki root.
+  local tmp
+  tmp="$(mktemp)"
+  {
+    printf '| Section | What it covers |\n'
+    printf '|---|---|\n'
+    for d in "$WIKI_ROOT"/*/; do
+      [[ -d "$d" ]] || continue
+      local dirname
+      dirname="$(basename "$d")"
+      case "$dirname" in
+        concepts) printf '| [Concepts](%s/) | Adapter, contract, intent, granularity, auth tiers, envelope, constraints, pagination. |\n' "$dirname" ;;
+        domains)  printf '| [Domains](%s/) | One page per contract (`ecommerce`, `pharma-data`, `social-media`) plus how to pick one. |\n' "$dirname" ;;
+        workflow) printf '| [Workflow](%s/) | Author loop, reverse-engineering, bb-eval, runtime verification, browser setup, gates. |\n' "$dirname" ;;
+        reference) printf '| [Reference](%s/) | Adapter tables, object schemas, error code enum, anti-patterns. |\n' "$dirname" ;;
+        decisions) printf '| [Decisions](%s/index.md) | Index of all ADR-style decision records in the repo. |\n' "$dirname" ;;
+        *) printf '| [%s](%s/) | (custom section) |\n' "$dirname" "$dirname" ;;
+      esac
+    done
+  } > "$tmp"
+
+  # Replace the sections table between markers in README.md.
+  # Marker: line "## Sections" -> next blank line + the table -> next blank line + next heading.
+  # We replace from "## Sections" up to (but not including) the next "## " heading.
+  # Everything after that heading is preserved verbatim.
+  python - "$README" "$tmp" > "$README.tmp" <<'PYEOF'
+import sys, re
+readme, table_file = sys.argv[1], sys.argv[2]
+with open(readme) as f:
+    text = f.read()
+with open(table_file) as f:
+    table = f.read().rstrip('\n')
+
+# Pattern: match "## Sections" header, then everything up to (but not including)
+# the next line that starts with "## " (any other H2). The matched block is
+# replaced with "## Sections\n\n<table>\n\n".
+pattern = re.compile(
+    r'^## Sections\b.*?(?=^## |\Z)',
+    re.MULTILINE | re.DOTALL,
+)
+new = pattern.sub('## Sections\n\n' + table + '\n\n', text, count=1)
+sys.stdout.write(new)
+PYEOF
+  mv "$README.tmp" "$README"
+
+  rm "$tmp"
+  log "regenerated index in $README"
+}
+
+cmd_frontmatter() {
+  local target="$1"
+  [[ -z "$target" ]] && usage "path required"
+  local file
+  file="$(resolve_path "$target")" || die "no such page: $target"
+  parse_frontmatter "$file"
+}
+
+cmd_validate() {
+  local fail=0
+  while IFS= read -r -d '' f; do
+    validate_frontmatter "$f" || fail=1
+  done < <(find "$WIKI_ROOT" -type f -name '*.md' -print0 | sort -z)
+
+  # Broken-link check: every (../path.md) or (path.md) link in any wiki page
+  # must resolve to an existing file anywhere in the repo (or under WIKI_ROOT).
+  log ""
+  log "checking internal links..."
+  while IFS= read -r -d '' f; do
+    set +e
+    grep -oE '\]\(([^)]+)\)' "$f" 2>/dev/null \
+      | sed -E 's/^\]\((.*)\)$/\1/' \
+      | grep -vE '^(https?:|mailto:|#)' \
+      | while IFS= read -r link; do
+          [[ -z "$link" ]] && continue
+          local dir; dir="$(dirname "$f")"
+          local resolved="${dir}/${link}"
+          resolved="${resolved%%#*}"
+          resolved="${resolved%%\?*}"
+          if [[ -f "$resolved" || -d "$resolved" ]]; then
+            continue
+          fi
+          log "FAIL  broken-link  $f -> $link"
+          exit 1
+        done
+    file_status=$?
+    set -e
+    [[ $file_status -ne 0 ]] && fail=1
+  done < <(find "$WIKI_ROOT" -type f -name '*.md' -print0 | sort -z)
+
+  return $fail
+}
+
+cmd_references() {
+  local target="$1"
+  [[ -z "$target" ]] && usage "path required"
+  local file
+  file="$(resolve_path "$target")" || die "no such page: $target"
+  find_references "$file" | sed "s|^\\./|${WIKI_ROOT}/|"
+}
+
+cmd_help() {
+  sed -n '2,30p' "$0" | sed 's/^# \{0,1\}//'
+}
+
+# ----------------------------------------------------------------------------
+# dispatch
+# ----------------------------------------------------------------------------
+
+cmd="${1:-help}"
+shift || true
+
+case "$cmd" in
+  list)              cmd_list "$@" ;;
+  get)               cmd_get "$@" ;;
+  search)            cmd_search "$@" ;;
+  add)               cmd_add "$@" ;;
+  edit)              cmd_edit "$@" ;;
+  move)              cmd_move "$@" ;;
+  delete|rm)         cmd_delete "$@" ;;
+  regenerate-index)  cmd_regenerate_index "$@" ;;
+  frontmatter)       cmd_frontmatter "$@" ;;
+  validate)          cmd_validate "$@" ;;
+  references|refs)   cmd_references "$@" ;;
+  help|-h|--help)    cmd_help ;;
+  *)                 usage "unknown command: $cmd (try 'help')" ;;
+esac
