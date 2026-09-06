@@ -1,5 +1,7 @@
 # bb-adapter-evolver
 
+English | [简体中文](README.zh-CN.md)
+
 > Infrastructure for evolving high-quality [bb-browser](https://github.com/epiral/bb-browser) adapters that are good enough for AI agents to use as primary consumers.
 
 ## What this is (and isn't)
@@ -47,6 +49,7 @@ Phases 1-3 ran on the ecommerce track. The pharma-data and social-media domains 
 bb-adapter-evolver/
 ├── AGENTS.md              # Conventions for any agent (human or AI) working here
 ├── README.md              # This file
+├── README.zh-CN.md        # Chinese translation of this file
 ├── docs/claude/
 │   ├── contracts/         # One v1.md per domain: ecommerce, pharma-data, social-media
 │   ├── skills/
