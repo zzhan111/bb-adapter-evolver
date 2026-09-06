@@ -3,7 +3,7 @@
 # bb-eval — score a bb-browser adapter against the contract for its domain.
 #
 # Usage:
-#   bb-eval <path-to-adapter.js> [--domain ecommerce|pharma-data]
+#   bb-eval <path-to-adapter.js> [--domain ecommerce|pharma-data|social-media]
 #   bb-eval <path-to-adapter.js> --json
 #
 # Exit code: 0 if all FAIL checks pass, 1 otherwise.
@@ -11,6 +11,11 @@
 #
 # This is a STATIC checker. It reads the adapter source and its @meta block.
 # It does NOT execute the adapter. To execute, use bb-browser MCP separately.
+#
+# Check families:
+#   (cross-domain)  URL constant, @meta fields, error envelope, pagination, nextActions
+#   PHR-*           pharma-data specific
+#   SOC-*           social-media specific
 #
 set -u
 
@@ -100,13 +105,39 @@ NAME="$(meta_get '.name')"
 META_DOMAIN="$(meta_get '.domain')"
 ADAPTER_LOCAL="${NAME##*/}"
 
+# ----- Syntax check (Check 0) — runs FIRST so subsequent checks have a valid source -----
+# SM-2.9: prevent regression of the anonymous-async-function bug. node --check
+# catches things grep can't: syntax errors, anonymous function declarations, etc.
+if command -v node >/dev/null 2>&1; then
+  if ! node --check "$ADAPTER" 2>/dev/null; then
+    record FAIL "syntax-check" "Adapter has JS syntax errors. Run 'node --check' on this file. (Caught by SM-2.9 verifier.)"
+  else
+    record PASS "syntax-check" "Adapter source parses as valid JavaScript."
+  fi
+else
+  record WARN "syntax-check" "node binary not found; cannot run syntax check."
+fi
+
 if [[ -z "$DOMAIN" ]]; then
-  # heuristic: pharma-data hosts (checked first for specificity)
+  # Domain detection. @meta.domain is used inconsistently across the codebase:
+  #   - pharma-data / social-media adapters set it to the contract name ("pharma-data", "social-media")
+  #   - ecommerce adapters set it to a hostname ("s.1688.com")
+  # So: first honor explicit contract-name values, then fall back to hostname heuristics
+  # on both @meta.domain and @meta.name.
   case "$META_DOMAIN" in
-    *yaozh.com*|*data.yaozh.com*) DOMAIN=pharma-data ;;
-    *ysbang*|*jd.com*|*pdd.com*|*taobao.com*|*111.com.cn*|*1yaocheng*|*tmall*|*yaoex*|*fangkuaiyi*) DOMAIN=ecommerce ;;
-    *) DOMAIN=unknown ;;
+    ecommerce|pharma-data|social-media) DOMAIN="$META_DOMAIN" ;;
   esac
+
+  if [[ -z "$DOMAIN" ]]; then
+    # Hostname heuristics — check both domain and name fields.
+    HAYSTACK="${META_DOMAIN} ${NAME}"
+    case "$HAYSTACK" in
+      *yaozh.com*|*data.yaozh.com*|*yaozh/*) DOMAIN=pharma-data ;;
+      *xiaohongshu*|*xhs*|*xhslink*|*twitter.com*|*x.com*|*twitter/*|*bilibili*|*b23.tv*|*bilibili/*|*discord.com*|*discord.gg*|*discord/*|*telegram*|*t.me*) DOMAIN=social-media ;;
+      *ysbang*|*1688*|*jd.com*|*pdd.com*|*taobao.com*|*111.com.cn*|*1yaocheng*|*tmall*|*yaoex*|*fangkuaiyi*) DOMAIN=ecommerce ;;
+      *) DOMAIN=unknown ;;
+    esac
+  fi
 fi
 
 # ----- PHR-1: domain must be pharma-data if --domain pharma-data -----
@@ -209,6 +240,215 @@ if [[ "$DOMAIN" == "pharma-data" ]]; then
   fi
 fi
 
+# ===========================================================================
+# social-media domain checks (SOC-* family)
+# Mirrors the PHR-* structure. Active only when DOMAIN == social-media.
+# ===========================================================================
+
+# ----- SOC-1: domain must be social-media -----
+if [[ "$DOMAIN" == "social-media" ]]; then
+  META_DOMAIN_VAL="$(meta_get '.domain')"
+  if [[ "$META_DOMAIN_VAL" == "social-media" ]]; then
+    record PASS "SOC-1 domain-set" "@meta.domain is 'social-media'."
+  else
+    record FAIL "SOC-1 domain-set" "@meta.domain must be 'social-media', got: ${META_DOMAIN_VAL:-empty}"
+  fi
+fi
+
+# ----- SOC-2: accessTier declared and in enum -----
+if [[ "$DOMAIN" == "social-media" ]]; then
+  ACCESS_TIER="$(meta_get '.accessTier')"
+  case "$ACCESS_TIER" in
+    anonymous|auth_read|auth_write)
+      record PASS "SOC-2 access-tier" "@meta.accessTier is '${ACCESS_TIER}'." ;;
+    *)
+      record FAIL "SOC-2 access-tier" "@meta.accessTier must be one of anonymous|auth_read|auth_write, got: ${ACCESS_TIER:-empty}" ;;
+  esac
+fi
+
+# ----- SOC-3: intent declared and in enum -----
+if [[ "$DOMAIN" == "social-media" ]]; then
+  INTENT="$(meta_get '.intent')"
+  case "$INTENT" in
+    discover|consume|engage|create|manage)
+      record PASS "SOC-3 intent" "@meta.intent is '${INTENT}'." ;;
+    *)
+      record FAIL "SOC-3 intent" "@meta.intent must be one of discover|consume|engage|create|manage, got: ${INTENT:-empty}" ;;
+  esac
+fi
+
+# ----- SOC-4: adapter-name <-> intent consistency -----
+# feed/search accept discover OR consume (boundary blurs on simplified sites).
+# Other adapters have a single expected intent.
+if [[ "$DOMAIN" == "social-media" ]]; then
+  case "$ADAPTER_LOCAL" in
+    feed|search)   EXPECTED_INTENT="discover|consume" ;;
+    post-detail|comments|user|user-notes|notifications|unread) EXPECTED_INTENT="consume" ;;
+    like|favorite|comment-post|follow) EXPECTED_INTENT="engage" ;;
+    post-create)   EXPECTED_INTENT="create" ;;
+    auth|post-delete|comment-delete) EXPECTED_INTENT="manage" ;;
+    dm-list|follower-list|follow-list) EXPECTED_INTENT="consume" ;;
+    dm-send)       EXPECTED_INTENT="engage" ;;
+    *)             EXPECTED_INTENT="" ;;
+  esac
+  if [[ -z "$EXPECTED_INTENT" ]]; then
+    record WARN "SOC-4 intent-name" "'${ADAPTER_LOCAL}' is not in the canonical set; cannot verify intent mapping."
+  else
+    # multi-allowed (feed/search) uses | delimiter; check membership
+    if [[ "$EXPECTED_INTENT" == *"|"* ]]; then
+      if [[ " ${EXPECTED_INTENT//|/ } " == *" $INTENT "* ]]; then
+        record PASS "SOC-4 intent-name" "@meta.intent '${INTENT}' is valid for '${ADAPTER_LOCAL}'."
+      else
+        record FAIL "SOC-4 intent-name" "@meta.intent for '${ADAPTER_LOCAL}' must be one of [${EXPECTED_INTENT}], got: ${INTENT:-empty}"
+      fi
+    else
+      if [[ "$INTENT" == "$EXPECTED_INTENT" ]]; then
+        record PASS "SOC-4 intent-name" "@meta.intent '${INTENT}' matches '${ADAPTER_LOCAL}'."
+      else
+        record FAIL "SOC-4 intent-name" "@meta.intent for '${ADAPTER_LOCAL}' must be '${EXPECTED_INTENT}', got: ${INTENT:-empty}"
+      fi
+    fi
+  fi
+fi
+
+# ----- SOC-5: readOnly <-> write/read consistency -----
+if [[ "$DOMAIN" == "social-media" && -n "$META_JSON" ]]; then
+  RO="$(meta_get '.readOnly')"
+  case "$ADAPTER_LOCAL" in
+    like|favorite|comment-post|follow|post-create|post-delete|comment-delete|dm-send)
+      # write adapters
+      if [[ "$RO" == "true" ]]; then
+        record FAIL "SOC-5 readonly-mismatch" "Write adapter '${ADAPTER_LOCAL}' must declare readOnly: false, got: ${RO:-empty}"
+      else
+        record PASS "SOC-5 readonly-mismatch" "Write adapter '${ADAPTER_LOCAL}' declares readOnly: false."
+      fi
+      # write adapters must also be accessTier auth_write
+      if [[ "$ACCESS_TIER" != "auth_write" ]]; then
+        record FAIL "SOC-5 write-tier" "Write adapter '${ADAPTER_LOCAL}' must have accessTier: auth_write, got: ${ACCESS_TIER:-empty}"
+      else
+        record PASS "SOC-5 write-tier" "Write adapter '${ADAPTER_LOCAL}' has accessTier: auth_write."
+      fi
+      ;;
+    auth|search|feed|post-detail|comments|user|user-notes|notifications|unread|dm-list|follower-list|follow-list)
+      # read adapters
+      if [[ "$RO" == "true" ]]; then
+        record PASS "SOC-5 readonly-mismatch" "Read adapter '${ADAPTER_LOCAL}' declares readOnly: true."
+      else
+        record FAIL "SOC-5 readonly-mismatch" "Read adapter '${ADAPTER_LOCAL}' must declare readOnly: true, got: ${RO:-empty}"
+      fi
+      ;;
+  esac
+fi
+
+# ----- SOC-6: canonical adapter name + forbidden patterns -----
+if [[ "$DOMAIN" == "social-media" && -n "$ADAPTER_LOCAL" ]]; then
+  case "$ADAPTER_LOCAL" in
+    # forbidden filter-variants
+    feed-hot|feed-recommendation|feed-category|feed-following|feed-summary|note-summary)
+      record FAIL "SOC-6 forbidden-name" "'${ADAPTER_LOCAL}' is a filter-variant of feed. Use the 'source' arg on 'feed'." ;;
+    search-topic|search-hashtag|topics)
+      record FAIL "SOC-6 forbidden-name" "'${ADAPTER_LOCAL}' is a filter-variant of search. Use the 'topic' arg on 'search'." ;;
+    user-posts|user-favorites|user-likes|favorites|likes|hot-categories)
+      record FAIL "SOC-6 forbidden-name" "'${ADAPTER_LOCAL}' is a filter-variant of user-notes. Use the 'which-list' arg on 'user-notes'." ;;
+    auto-login|login-flow)
+      record FAIL "SOC-6 forbidden-name" "'${ADAPTER_LOCAL}' is forbidden — login is the human's job (AGENTS.md #5). Use 'auth'." ;;
+    *-debug|*-v2)
+      record FAIL "SOC-6 forbidden-name" "'${ADAPTER_LOCAL}' is a debug/v2 variant. Delete before merge." ;;
+    # P0 canonical
+    auth|search|feed|post-detail|comments|user|user-notes|notifications|unread|like|favorite|comment-post|follow|post-create)
+      record PASS "SOC-6 canonical-name" "'${ADAPTER_LOCAL}' is a P0 social-media adapter." ;;
+    # P1 canonical
+    post-delete|comment-delete|dm-list|dm-send|follow-list|follower-list)
+      record PASS "SOC-6 canonical-name" "'${ADAPTER_LOCAL}' is a P1 social-media adapter." ;;
+    *)
+      record WARN "SOC-6 canonical-name" "'${ADAPTER_LOCAL}' is not in the canonical P0/P1 set. Justify or rename."
+      ;;
+  esac
+fi
+
+# ----- SOC-7: error envelope (error/hint/action) -----
+# (Uses the same logic as the cross-domain Check 5 below; record here for domain context.)
+if [[ "$DOMAIN" == "social-media" ]]; then
+  if grep -qP "return\s*\{" "$ADAPTER" && grep -q "error\s*:" "$ADAPTER"; then
+    if grep -q "hint\s*:" "$ADAPTER" && grep -q "action\s*:" "$ADAPTER"; then
+      record PASS "SOC-7 error-envelope" "Adapter returns error/hint/action triple."
+    else
+      record WARN "SOC-7 error-envelope" "Adapter returns errors but does not consistently include 'hint' and 'action'."
+    fi
+  else
+    record WARN "SOC-7 error-envelope" "No error-return pattern found. Verify error paths use the 10-code enum."
+  fi
+fi
+
+# ----- SOC-8: recommendedNextActions (auth exempt) -----
+if [[ "$DOMAIN" == "social-media" ]]; then
+  if grep -q "recommendedNextActions" "$ADAPTER"; then
+    record PASS "SOC-8 next-actions" "recommendedNextActions present."
+  else
+    case "$ADAPTER_LOCAL" in
+      auth) record PASS "SOC-8 next-actions" "'auth' is exempt from recommendedNextActions." ;;
+      *) record WARN "SOC-8 next-actions" "Adapter does not populate recommendedNextActions. Agents need this to chain calls." ;;
+    esac
+  fi
+fi
+
+# ----- SOC-9: pagination object in list adapters -----
+if [[ "$DOMAIN" == "social-media" ]]; then
+  case "$ADAPTER_LOCAL" in
+    search|feed|user-notes|comments|notifications)
+      if grep -q "pagination" "$ADAPTER"; then
+        record PASS "SOC-9 pagination" "List adapter declares pagination object."
+      else
+        record WARN "SOC-9 pagination" "List adapters must return a 'pagination' object. See contract §6.3."
+      fi
+      ;;
+  esac
+fi
+
+# ----- SOC-10: authStatus literal in source -----
+if [[ "$DOMAIN" == "social-media" ]]; then
+  if grep -q "authStatus" "$ADAPTER"; then
+    record PASS "SOC-10 auth-status" "Source contains 'authStatus' literal."
+  else
+    record FAIL "SOC-10 auth-status" "Every return must include authStatus: anonymous|auth_read|auth_write."
+  fi
+fi
+
+# ----- SOC-11: URL constant in first 50 lines -----
+# (Same header-grep as the cross-domain Check 1; record SOC-11 for the domain.)
+if [[ "$DOMAIN" == "social-media" ]]; then
+  SOC11_HEADER="$(head -n 50 "$ADAPTER")"
+  if printf '%s' "$SOC11_HEADER" | grep -Eq "(const|let|var)\s+[A-Z_]*URL[A-Z_]*\s*=\s*['\"]https?://"; then
+    record PASS "SOC-11 url-constant" "Destination URL constant declared in first 50 lines."
+  else
+    record FAIL "SOC-11 url-constant" "First 50 lines must declare const HOME_URL = 'https://...'."
+  fi
+  unset SOC11_HEADER
+fi
+
+# ----- SOC-12: no hardcoded credentials -----
+if [[ "$DOMAIN" == "social-media" ]]; then
+  if grep -qP "(password\s*=|passwd\s*=|api_key\s*=|secret\s*=|Bearer\s+[A-Za-z0-9+/=]{20,})" "$ADAPTER"; then
+    record FAIL "SOC-12 no-creds" "Adapter source may contain hardcoded credentials. Remove or read from env."
+  else
+    record PASS "SOC-12 no-creds" "No hardcoded credentials detected."
+  fi
+fi
+
+# ----- SOC-13: per-note token cache evidence (WARN) -----
+if [[ "$DOMAIN" == "social-media" ]]; then
+  case "$ADAPTER_LOCAL" in
+    post-detail|comments|like|favorite|comment-post|feed|search|user-notes)
+      if grep -qE "(xsecToken|xsec_token|noteContext|noteContextCache|cacheNoteContext)" "$ADAPTER"; then
+        record PASS "SOC-13 token-cache" "Source shows per-note token cache logic."
+      else
+        record WARN "SOC-13 token-cache" "No per-note token (xsecToken/noteContext) logic found. Static check cannot verify runtime behavior."
+      fi
+      ;;
+  esac
+fi
+
+
 # ----- Check 1: URL constant in first 50 lines -----
 HEADER="$(head -n 50 "$ADAPTER")"
 if printf '%s' "$HEADER" | grep -Eq "(const|let|var)\s+[A-Z_]*URL[A-Z_]*\s*=\s*['\"]https?://"; then
@@ -245,6 +485,17 @@ if [[ -n "$META_JSON" ]]; then
         record PASS "meta-field-${pfield}" "@meta.${pfield} is present."
       else
         record FAIL "meta-field-${pfield}" "@meta is missing required field: ${pfield} (pharma-data contract)"
+      fi
+    done
+  fi
+
+  # social-media: accessTier and intent are required @meta fields
+  if [[ "$DOMAIN" == "social-media" ]]; then
+    for sfield in accessTier intent; do
+      if meta_has "$sfield"; then
+        record PASS "meta-field-${sfield}" "@meta.${sfield} is present."
+      else
+        record FAIL "meta-field-${sfield}" "@meta is missing required field: ${sfield} (social-media contract)"
       fi
     done
   fi
