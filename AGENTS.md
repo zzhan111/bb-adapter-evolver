@@ -78,8 +78,8 @@ Mirrors `bb-browser-main/AGENTS.md`:
 If you are a coding agent reading this for the first time and the task is "write a bb-browser adapter":
 
 1. Read `docs/claude/skills/bb-adapter-author/SKILL.md`
-2. Identify the domain. For ecommerce, read `docs/claude/contracts/ecommerce/v1.md`
-3. Read `docs/claude/methodology/reverse-engineering/playbook.md`
+2. Identify the domain (ecommerce, pharma-data, or social-media) and read `docs/claude/contracts/<domain>/v1.md`
+3. Read `docs/claude/methodology/reverse-engineering/playbook.md` (plus `social-media-playbook.md` for social-media)
 4. Author the adapter under `~/.bb-browser/sites/<site>/adapters/<name>.js`
 5. Run `tools/bb-eval <path-to-adapter>` and fix every FAIL before declaring done
 6. Run the adapter's `example` via bb-browser MCP. If it requires login, stop and ask the human.
