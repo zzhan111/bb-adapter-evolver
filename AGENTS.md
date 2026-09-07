@@ -51,7 +51,7 @@ The repo is staged in 4 phases. We have completed **Phases 1-3**. Phase 4 is con
 
 These rules are derived from the user's project requirements (see `memory/soul.md`). They are NOT optional:
 
-1. **Adapter must declare destination URL up front.** First 50 lines of every adapter must include a constant naming the canonical entry URL (e.g. `const HOME_URL = 'https://...'`). `bb-eval` enforces this.
+1. **Adapter must declare destination URL up front.** The first 50 code lines of every adapter (counted after the `@meta` block; front-matter comments don't count) must include a constant naming the canonical entry URL (e.g. `const HOME_URL = 'https://...'`). `bb-eval` enforces this.
 2. **Adapter granularity = user's primary use case for that site, not every UI control.** ysbang's 38 adapters (search-by-price, search-by-factory, search-by-provider, ...) are the **anti-pattern**. Filters belong inside `search`, not as separate adapters.
 3. **Tier-2/Tier-3 (token+CSRF or webpack injection) is the default assumption.** Cookie-only is the exception, only for genuinely public pages.
 4. **Adapter primary user is an AI agent. Human is secondary.** This drives schema design (full English field names, units in values, URLs in every product, `error/hint/action` triple, `recommendedNextActions` chain).

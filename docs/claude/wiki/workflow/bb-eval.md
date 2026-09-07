@@ -142,6 +142,7 @@ The contract is wrong, the check is wrong, or the adapter is wrong — diagnose 
 | 2026-06-18 | Domain-detection heuristic only ran against `@meta.domain`, missing ecommerce hostname-only adapters | Now runs against both `@meta.domain` and `@meta.name` |
 | 2026-06-19 | Static check did not catch anonymous-function syntax errors in 1688/yaozh adapters | Surfaced in [runtime verification](runtime-verification.md); `node --check` recommended for future bb-eval extension |
 | 2026-09-07 | **The 2026-06-19 conclusion was inverted.** The runtime (`site.ts`) evals the body as one expression `(body)(args)`: the bare single-function format is valid, and the June-29 multi-statement rewrite is what broke 43 adapters. `node --check` parses files as standalone modules and reports the opposite verdict. | Check 0 replaced: it now wraps the body as `(body)` and compiles it with `vm.Script` (runtime-identical). Also added `ybm100.com` to the ecommerce hostname heuristics |
+| 2026-09-07 | URL-constant window counted physical lines; June-29 files carry `@disclaimer` headers + expanded `@meta` that alone exceed 50 lines, making the rule unsatisfiable (the URL const was already the first code statement) | `url-declared` / `SOC-11` / `PHR-3` now count the first 50 lines **after** the `@meta` block; helper adapters (kind: helper) are exempt from `PHR-3` like PHR-4..7 already were |
 
 ## Related
 

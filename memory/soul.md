@@ -660,3 +660,44 @@ SM-2 关闭 (4 实测 + 11 静态 0 fail)。SM-3 (twitter/bilibili 跨站点) �
 - adapter 总数修正为 80；运行时目录 17 站 / 98 个（ysbang 37、xiaohongshu 17 含根目录杂散 get-trending-content.js、1688 11、ybm 9、yaozh 7、erp 6、+11 个单 adapter 站点）。
 - ysbang 37 个在 `W:\home\zhang\.openclaw\workspace\ysbang\packages\core\adapters\`，已**复制**到 `~/.bb-browser/sites/ysbang/adapters/`（原项目仍引用原件）；shanghai-demo 是 ysbang 的字节级副本（不是 yaoex）。
 - yaoex = `ybm` 目录（9 个 P0 adapter，此前因散在站点根目录而漏数）；域名 ybm100.com 已进 bb-eval 启发式。AGENTS.md/README 引用的 `~/.bb-browser/sites/ysbang/adapters/` 在复制后已成立，无需修正。
+
+## 2026-09-07 — SM-2.9 执行完成：45 个 adapter 重写为运行时合法格式 + 新发现 bb.* API 幽灵
+
+### 执行摘要
+
+活体冒烟确认 GO 后执行。改写器 `_rewrite-sm29.js`（acorn 驱动，Z:\Apps bb-browser 的 pnpm 依赖里现成有 acorn@8.15）按「最小 diff」原则机械改写：原始代码逐字保留，包进单个具名入口函数（`async function <entry>(args) { ... }`），剥 `module.exports`，`@meta.name` 推断入口名（kebab→camel 候选），pharma 的 list/item 双分支合成 `args.action` dispatcher，超 50 行的 URL const 前移到 wrapper 顶部。
+
+**处理明细**：ybm×9（裸匿名函数 + 顶层 const）、1688×11（module.exports 具名）、yaozh×7（5 个无导出双函数 → dispatcher；yaopinzhongbiao/yaozh-auth 单导出）、xhs×16（无导出，camelCase 入口）、ysbang×2（cart-summary/order-detail——与 ybm 同款匿名格式，非独立怪病）。备份在 `~/.bb-browser/backup-pre-sm29-20260907/`（81 文件）。
+
+**结果**：全量运行时编译 98/98 OK。bb-eval：ybm 114/0/0，1688 136/3w/0，yaozh 153/11w/0，xhs 413/0/0，ysbang 362/102w/**15 fail（全部为改写前旧债**：search-by-* 反模式命名、cart-summary 应并入 cart-list、search 无静态 URL 常量、store-list-debug 调试名——ysbang 37 个是 legacy 基线，不属 SM-2.9 范围）。
+
+### 顺手修的三个仓库侧问题
+
+1. **bb-eval URL 窗口语义**：xhs 等 June-29 文件的 `@disclaimer` 头 + 文档头 + 扩展 `@meta` 前置注释就超过 50 物理行，URL const 即使已在 wrapper 第一行（文件 80 行）也不可能过「前 50 行」——规则改为**数 `@meta` 块之后的头 50 行代码**（url-declared / SOC-11 / PHR-3 同步），AGENTS.md 硬规则 #1 措辞同步。helper（kind: helper）豁免 PHR-3（与既有 PHR-4..7 豁免一致）。
+2. **yaopinzhongbiao 重构**：内联 `if (args.action === 'list'/'item')` 分支改为嵌套 `async function list/item` + 显式分发（保留 UNKNOWN_ACTION envelope），`@meta.domain` 从 hostname 改为合约名 'pharma-data'。
+3. **ysbang/search 跨源导航加固**：非本域标签页时不再 `location.href` 自杀式导航（会杀 eval 上下文），返回 `NAVIGATE_REQUIRED` envelope；本域内 hash 导航安全保留。
+
+### 活体冒烟结果（daemon HTTP，fresh full-scope session）
+
+| Adapter | 结果 |
+|---|---|
+| ysbang/auth（原生基线，未动） | OK：`{"success":true,"loggedIn":false,...}` |
+| ybm/auth（改写后） | **OK：完整业务 envelope**（Not authenticated + hint + action）——改写格式端到端验证 |
+| 1688/auth（改写后） | 编译并开始执行，Command timeout（自身等待逻辑与环境问题，非格式问题） |
+| xiaohongshu/auth（改写后） | `ReferenceError: bb is not defined` |
+| yaozh/yaopinjiage（改写后） | 同上 |
+
+### ⚠️ 新发现（SM-2.10 候选）：bb.* API 在运行时根本不存在
+
+活体冒烟暴露了**格式之下的第二层缺陷**：运行时上下文（CLI site.ts 与 daemon site-runner.ts 两条路径都已源码核实）**从不注入 `bb` 全局**——`prepareAdapterScript` 同样只做 `(body)(args)`。真正的运行时 API = 原生 page API（fetch / document / location / cookieStore），这正是 ysbang 原生 37 个（0/37 用 bb.*）和社区 bb-sites 全部 adapter（0 个用 bb.*）能跑的原因。
+
+波及：**本地 41 个文件引用 `bb.goto/eval/fetch/$$eval/$eval`**（ybm 9/9、1688 11/11、yaozh 5/7、xhs 16/16）。ybm/auth 活体通过纯属侥幸——它的 `bb.goto` 藏在「已在本域则跳过」分支里，本域执行时永不触发；离开本域就是 ReferenceError 地雷。且仓库三个 TEMPLATE.js 和 wiki 教的正是 `bb.goto/bb.$$eval/bb.fetch`——**模板本身在教不存在的 API**（Phase 1 起就如此）。
+
+**SM-2.10 方向**（待放行）：41 文件 bb.* → 原生 page API 迁移（模式抄 ysbang/社区 adapter：导航交给 agent/site 命令的 domain 匹配或返回 NAVIGATE_REQUIRED envelope，页内用 fetch+DOM）；模板与 wiki 同步改教原生风格。工具链（bb-eval Check 0 / verifier）均已就位可直接复用。
+
+### 勘误补遗（本轮核实）
+
+- yaozh 7 个文件 mtime 06-16：它们**生来**就是多语句格式（Phase 3 经 browser_eval inline 测试，从未走 site 命令路径），并非 6-29 改写受害者；6-29 改的是 1688/xhs/ybm（mtime 证实）。前文勘误条目相应微调。
+- `BB_BROWSER_HOME=Z:\Apps\bb-browser` 在当前 shell 环境生效，CLI 只扫 `Z:\Apps\bb-browser\{sites,bb-sites}`（sites 为空）；`C:\Users\zhang\.bb-browser\sites` 的 98 个 adapter 需覆盖该变量才会被 CLI 发现。站点名取 `@meta.name`（JSON 优先于路径推导）。
+- no-eval 降级机制：scope 由 `x-bb-session-scope` 头决定，缺省 no-eval，per-session-id **只降不升**（session-state.ts:49）；新 session id + full scope 即恢复。谁在降级仍未查明。
+- 工具脚本保留：`_rewrite-sm29.js`（codemod）、`_smoke-runtime.js`（daemon 冒烟）——均在 repo 根、gitignored，供 SM-2.10 复用。
