@@ -620,3 +620,43 @@ SM-2 关闭 (4 实测 + 11 静态 0 fail)。SM-3 (twitter/bilibili 跨站点) �
 - **SM-3 跨站点** — 未启动 (twitter/bilibili)。
 - **未 commit / 未 push** — 按 AGENTS.md "commit only when user asks"。
 
+
+## 2026-09-07 — 勘误：SM-2.8「anonymous function 是 bug」结论被运行时审计推翻（+ SM-2.9 清单）
+
+### 来源
+
+辅助会话（Selection side chat, sess_2836d629, 2026-09-06 晚）做了孵化 adapter 实地审计；本会话 2026-09-07 已对 `Z:\Apps\bb-browser\packages\cli\src\commands\site.ts` 源码复核确认，非口说无凭。
+
+### 运行时事实（site.ts ~613-620，已源码核实）
+
+- 运行时剥掉第一个 `/* @meta ... */` 块，把剩余主体当**单个表达式**求值：`(${jsBody})(${argsJson})`。
+- 因此文件主体必须是**单表达式**：ysbang 原生的裸 `async function(args){...}`（匿名或具名单函数）完全合法；顶层 `const`、多语句、`module.exports` 全部 SyntaxError。
+- `node --check` 按独立模块解析文件，判定与运行时**相反**——它给坏格式发通行证、给好格式发罚单。
+
+### SM-2.8 勘误（2026-06-19 条目，逐条对照）
+
+1. 「1688×12 + yaozh 2 个 adapter 是 anonymous-async-function 语法错误、从未跑通」——**错**。那些文件（裸单函数格式）一直运行时合法；runtime-shape verifier 报 FAIL 是因为 verifier 按 module 语义调用 named export。
+2. 「6-29 批量改写是修复」——**方向反了**。6-29 把 43 个文件（ybm 9、1688 11、xhs 16、yaozh 7）改写成多语句 + module.exports 格式，才真正弄坏它们（运行时报 `Unexpected token 'const'`）。SM-2.8 的「16/16 xhs runtime-shape PASS」恰恰是在给错误格式背书。
+3. XHS SOC-11 14/16 FAIL 是误报：6-29 扩 `@meta`（ToS 头等）把 HOME_URL 挤过第 50 行（如 search.js 在第 77 行）。ybm/ysbang 的 `url-declared` FAIL 同因。
+
+### 本轮已落地（本仓库内，全部已 commit）
+
+- `tools/bb-eval` Check 0 重写：剥 @meta 后以 `vm.Script("("+body+")")` 按运行时语义编译；`ybm100.com` 加入 ecommerce 启发式。实测与审计完全一致：ysbang 原生 PASS；ybm/1688/xhs/yaozh 均报 `Unexpected token 'const'`。
+- 三个域 TEMPLATE 重构为运行时合法单函数格式：ecommerce 单 `search` 函数；pharma 单 `adapter` 函数内 dispatch `args.action` → 嵌套 list/item；social-media 拆为 TEMPLATE.js（search 读）+ TEMPLATE-write.js（like 写）。bb-eval 全绿（13/0/0、23/1w/0、28/0/0、26/0/0）。
+- wiki 被推翻表述已修正：runtime-verification.md（incident 一节按勘误重写）、bb-eval.md（"does NOT check" 一节 + 历史表追加 2026-09-07 勘误行）、getting-started.md（verifier 描述去掉 anonymous functions）。
+- PR #1 已留评论，防止 review 者被 PR 描述里旧的「14 个历史 bug」说法误导。
+
+### SM-2.9 清单（adapter 侧，待用户放行）
+
+1. **43 个 6-29 改写文件回滚**为单表达式格式（ybm 9、1688 11、xhs 16、yaozh 7）。目标格式 = 裸单函数（参考 ysbang 原生与新版 TEMPLATE）；pharma 需要 action dispatch（嵌套 list/item，参考新 pharma TEMPLATE）。
+2. **真坏的 3 个 ysbang adapter**：cart-summary（`SyntaxError 'utils'`）、order-detail（`SyntaxError 'function'`）修语法；search 改两段式 eval（导航后 eval 上下文被杀的问题）。
+3. **verify-adapter-runtime-shape.js 对齐运行时**：调用约定从 named-export 改为剥 @meta + `(body)(mockArgs)`，否则它继续给错误格式背书。
+4. **bb-eval 50 行窗口误报**：HOME_URL 被 6-29 扩大的 @meta 挤出窗口（xhs 14/16、ybm、ysbang）——考虑放宽为「前 50 行或首个函数声明之前」，或回滚后复测再定。
+5. **阻塞项**：daemon eval 权限数秒内被未知客户端降级 no-eval（未解）；ysbang 需人工登录（AGENTS.md #5）；CLI 实为 `ma-browser` v0.12.0（不在 PATH 的 `bb-browser`）。
+6. 以上完成后跑一轮 live smoke test 全量复测。
+
+### 其他盘点结论（辅助会话）
+
+- adapter 总数修正为 80；运行时目录 17 站 / 98 个（ysbang 37、xiaohongshu 17 含根目录杂散 get-trending-content.js、1688 11、ybm 9、yaozh 7、erp 6、+11 个单 adapter 站点）。
+- ysbang 37 个在 `W:\home\zhang\.openclaw\workspace\ysbang\packages\core\adapters\`，已**复制**到 `~/.bb-browser/sites/ysbang/adapters/`（原项目仍引用原件）；shanghai-demo 是 ysbang 的字节级副本（不是 yaoex）。
+- yaoex = `ybm` 目录（9 个 P0 adapter，此前因散在站点根目录而漏数）；域名 ybm100.com 已进 bb-eval 启发式。AGENTS.md/README 引用的 `~/.bb-browser/sites/ysbang/adapters/` 在复制后已成立，无需修正。
