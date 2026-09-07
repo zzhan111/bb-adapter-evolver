@@ -106,14 +106,30 @@ META_DOMAIN="$(meta_get '.domain')"
 ADAPTER_LOCAL="${NAME##*/}"
 
 # ----- Syntax check (Check 0) — runs FIRST so subsequent checks have a valid source -----
-# SM-2.9: prevent regression of the anonymous-async-function bug. node --check
-# catches things grep can't: syntax errors, anonymous function declarations, etc.
+# Mirrors the REAL runtime (bb-browser site.ts): the first /* @meta ... */ block is
+# stripped and the remaining body is evaluated as ONE expression, (body)(args).
+# So the body must compile as a single expression: top-level `const`, extra
+# statements, or `module.exports = ...` all throw SyntaxError at runtime even
+# though `node --check` (standalone module parse) blesses them. The previous
+# node --check gate had the verdict inverted (SM-2.8 correction, 2026-09-07).
 if command -v node >/dev/null 2>&1; then
-  if ! node --check "$ADAPTER" 2>/dev/null; then
-    record FAIL "syntax-check" "Adapter has JS syntax errors. Run 'node --check' on this file. (Caught by SM-2.9 verifier.)"
+  SYNTAX_ERR="$(node -e '
+    const fs = require("fs"), vm = require("vm");
+    const src = fs.readFileSync(process.argv[1], "utf8");
+    const body = src.replace(/\/\*\s*@meta[\s\S]*?\*\//, "").trim();
+    try {
+      new vm.Script("(" + body + ")");
+    } catch (e) {
+      console.error((e && e.message) ? e.message : String(e));
+      process.exit(1);
+    }
+  ' "$ADAPTER" 2>&1)"
+  if [[ -n "$SYNTAX_ERR" ]]; then
+    record FAIL "syntax-check" "Body does not compile as a single runtime expression — runtime evals (body)(args), so top-level statements / multiple functions / module.exports are fatal: ${SYNTAX_ERR}"
   else
-    record PASS "syntax-check" "Adapter source parses as valid JavaScript."
+    record PASS "syntax-check" "Body compiles as a single runtime expression (matches bb-browser site.ts eval semantics)."
   fi
+  unset SYNTAX_ERR
 else
   record WARN "syntax-check" "node binary not found; cannot run syntax check."
 fi
@@ -134,7 +150,7 @@ if [[ -z "$DOMAIN" ]]; then
     case "$HAYSTACK" in
       *yaozh.com*|*data.yaozh.com*|*yaozh/*) DOMAIN=pharma-data ;;
       *xiaohongshu*|*xhs*|*xhslink*|*twitter.com*|*x.com*|*twitter/*|*bilibili*|*b23.tv*|*bilibili/*|*discord.com*|*discord.gg*|*discord/*|*telegram*|*t.me*) DOMAIN=social-media ;;
-      *ysbang*|*1688*|*jd.com*|*pdd.com*|*taobao.com*|*111.com.cn*|*1yaocheng*|*tmall*|*yaoex*|*fangkuaiyi*) DOMAIN=ecommerce ;;
+      *ysbang*|*1688*|*ybm100.com*|*jd.com*|*pdd.com*|*taobao.com*|*111.com.cn*|*1yaocheng*|*tmall*|*yaoex*|*fangkuaiyi*) DOMAIN=ecommerce ;;
       *) DOMAIN=unknown ;;
     esac
   fi
