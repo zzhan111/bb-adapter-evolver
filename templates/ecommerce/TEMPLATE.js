@@ -1,11 +1,18 @@
 /**
  * bb-browser Ecommerce Adapter Template
- * 
+ *
  * This template shows the REQUIRED structure for any ecommerce domain adapter.
  * Derived from ysbang/search (13/13 pass on bb-eval) and the ecommerce contract v1.
  *
+ * FILE FORMAT (runtime rule): bb-browser strips the first @meta block comment and
+ * evaluates the remaining file body as ONE expression, (body)(args). So each
+ * adapter file = the @meta block + exactly ONE named async function. All consts
+ * (HOME_URL included) and helpers live INSIDE that function. Top-level `const`,
+ * extra statements, or `module.exports = ...` throw SyntaxError at runtime even
+ * though `node --check` parses them fine as a standalone module.
+ *
  * Run bb-eval to verify:  tools/bb-eval <your-adapter.js>
- * 
+ *
  * Required @meta fields:
  *   name        - "<site>/<adapter>" format
  *   description - what this adapter does
@@ -16,7 +23,8 @@
  *   example     - "bb-browser site <site>/<adapter> --arg1 val1 ..."
  *
  * Required code patterns:
- *   1. const HOME_URL = 'https://...' in first 15 lines
+ *   1. const HOME_URL = 'https://...' as the first statement inside the function
+ *      (must appear within the first 50 lines of the file)
  *   2. error/hint/action triple on ALL error returns
  *   3. recommendedNextActions for happy-path chaining
  *   4. pagination object for list adapters
@@ -39,9 +47,8 @@
 }
 */
 
-const HOME_URL = 'https://example.com';
-
-async function(args) {
+async function search(args) {
+  const HOME_URL = 'https://example.com';
   const { keyword, page = 1, pageSize = 20 } = args;
 
   // ── Error: missing required args ──
