@@ -156,6 +156,16 @@ if [[ -z "$DOMAIN" ]]; then
   fi
 fi
 
+# ----- Code window: first 50 lines AFTER the @meta block -----
+# The URL-constant rule counts CODE lines, not front matter: June-29 files carry
+# @disclaimer headers + expanded @meta that alone exceed 50 physical lines.
+meta_end_line="$(awk '/\/\* *@meta/{f=1} f && /\*\//{print NR; exit}' "$ADAPTER")"
+if [[ -n "$meta_end_line" ]]; then
+  CODE_WINDOW="$(sed -n "$((meta_end_line + 1)),$((meta_end_line + 50))p" "$ADAPTER")"
+else
+  CODE_WINDOW="$(head -n 50 "$ADAPTER")"
+fi
+
 # ----- PHR-1: domain must be pharma-data if --domain pharma-data -----
 if [[ "$DOMAIN" == "pharma-data" ]]; then
   META_DOMAIN_VAL="$(meta_get '.domain')"
@@ -433,7 +443,7 @@ fi
 # ----- SOC-11: URL constant in first 50 lines -----
 # (Same header-grep as the cross-domain Check 1; record SOC-11 for the domain.)
 if [[ "$DOMAIN" == "social-media" ]]; then
-  SOC11_HEADER="$(head -n 50 "$ADAPTER")"
+  SOC11_HEADER="$CODE_WINDOW"
   if printf '%s' "$SOC11_HEADER" | grep -Eq "(const|let|var)\s+[A-Z_]*URL[A-Z_]*\s*=\s*['\"]https?://"; then
     record PASS "SOC-11 url-constant" "Destination URL constant declared in first 50 lines."
   else
@@ -465,8 +475,8 @@ if [[ "$DOMAIN" == "social-media" ]]; then
 fi
 
 
-# ----- Check 1: URL constant in first 50 lines -----
-HEADER="$(head -n 50 "$ADAPTER")"
+# ----- Check 1: URL constant in first 50 code lines (after @meta) -----
+HEADER="$CODE_WINDOW"
 if printf '%s' "$HEADER" | grep -Eq "(const|let|var)\s+[A-Z_]*URL[A-Z_]*\s*=\s*['\"]https?://"; then
   record PASS url-declared "Destination URL constant declared in first 50 lines."
 elif printf '%s' "$HEADER" | grep -Eq "https?://[a-zA-Z0-9.-]+"; then
@@ -477,7 +487,10 @@ fi
 
 # ----- PHR-3: URL constant contains dbKey slug -----
 if [[ "$DOMAIN" == "pharma-data" && -n "$DBKEY" && "$DBKEY" != "null" ]]; then
-  if printf '%s' "$HEADER" | grep -Eq "https?://[^'\"]*/${DBKEY}"; then
+  KIND_VAL="$(meta_get '.kind')"
+  if [[ "$KIND_VAL" == "helper" ]]; then
+    record PASS "PHR-3 url-constant" "Helper adapter (kind: helper) does not require a dbKey URL slug."
+  elif printf '%s' "$HEADER" | grep -Eq "https?://[^'\"]*/${DBKEY}"; then
     record PASS "PHR-3 url-constant" "URL constant contains /${DBKEY}."
   else
     record FAIL "PHR-3 url-constant" "First 50 lines must contain a URL with /${DBKEY} slug."
