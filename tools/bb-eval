@@ -134,6 +134,33 @@ else
   record WARN "syntax-check" "node binary not found; cannot run syntax check."
 fi
 
+# ----- Check 0.5: no ghost API calls -----
+# The runtime injects no `bb` global (site.ts / site-runner.ts both evaluate
+# `(body)(args)` in the raw page context). bb.goto/bb.eval/bb.fetch and the
+# page-handle chain they returned were a phantom API — any real call throws
+# ReferenceError in production (soul.md 2026-09-07). Comment mentions are fine.
+if command -v node >/dev/null 2>&1; then
+  GHOST_HITS="$(node -e '
+    const fs = require("fs");
+    const NL = String.fromCharCode(10);
+    const lines = fs.readFileSync(process.argv[1], "utf8").split(NL);
+    const re = /(^|[^.\w])(?:await\s+)?(?:bb|page|probe|here)\.(goto|eval|evaluate|wait|\$eval|\$\$eval)\s*\(/;
+    const hits = [];
+    lines.forEach((ln, i) => {
+      if (/^\s*(\*|\/\/)/.test(ln)) return;
+      const t = ln.replace(/\/\/.*$/, "");
+      if (re.test(t)) hits.push((i + 1) + ": " + ln.trim().slice(0, 60));
+    });
+    process.stdout.write(hits.slice(0, 3).join(NL));
+  ' "$ADAPTER")"
+  if [[ -n "$GHOST_HITS" ]]; then
+    record FAIL "no-ghost-api" "Adapter calls the phantom bb.*/page.* API (no bb global exists at runtime): $GHOST_HITS"
+  else
+    record PASS "no-ghost-api" "No phantom bb.*/page.* calls."
+  fi
+  unset GHOST_HITS
+fi
+
 if [[ -z "$DOMAIN" ]]; then
   # Domain detection. @meta.domain is used inconsistently across the codebase:
   #   - pharma-data / social-media adapters set it to the contract name ("pharma-data", "social-media")

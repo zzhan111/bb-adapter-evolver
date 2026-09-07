@@ -701,3 +701,45 @@ SM-2 关闭 (4 实测 + 11 静态 0 fail)。SM-3 (twitter/bilibili 跨站点) �
 - `BB_BROWSER_HOME=Z:\Apps\bb-browser` 在当前 shell 环境生效，CLI 只扫 `Z:\Apps\bb-browser\{sites,bb-sites}`（sites 为空）；`C:\Users\zhang\.bb-browser\sites` 的 98 个 adapter 需覆盖该变量才会被 CLI 发现。站点名取 `@meta.name`（JSON 优先于路径推导）。
 - no-eval 降级机制：scope 由 `x-bb-session-scope` 头决定，缺省 no-eval，per-session-id **只降不升**（session-state.ts:49）；新 session id + full scope 即恢复。谁在降级仍未查明。
 - 工具脚本保留：`_rewrite-sm29.js`（codemod）、`_smoke-runtime.js`（daemon 冒烟）——均在 repo 根、gitignored，供 SM-2.10 复用。
+
+## 2026-09-07 — SM-2.10 执行完成：bb.* 幽灵 API 全量迁移（41 文件）+ 活体冒烟第一轮
+
+### 迁移明细（全部完成，幽灵调用 0）
+
+| 站点 | 文件 | 迁移方式 |
+|---|---|---|
+| ybm | 9 | 守卫块 → `NAVIGATE_REQUIRED` envelope（success 风格） |
+| xiaohongshu | 16 | codemod×15（`bb.goto`→页面守卫+NAVIGATE_REQUIRED；`page.eval/wait/evaluate` 共 52 处 → 页内直调 `(FN)()`/setTimeout promise）；like.js 手工（3 goto probe 流 → 页内读 `currentNoteId` + NAVIGATE_REQUIRED）；auth 的 `probeLogin(page)` 参数清理 |
+| yaozh | 5 | goto → `fetch(url,{credentials:'include'})` + `DOMParser` 解析（yaopinzhongbiao 既有模式）；`bb.$$eval/$eval` → `[...doc.querySelectorAll(sel)]`/`doc.querySelector(sel)`；回调内唯一 1 处活 `document` → `doc` |
+| 1688 | 11 | 守卫 → NAVIGATE_REQUIRED；search 的 GBK 自修复块（含 `form.submit()` 自导航）随 bb.goto 一并移除；7 个文件的 `window.lib.mtop.request` await 补 8s 超时竞速（auth 无保护会拖死整个 eval） |
+
+工具脚本（gitignored，供复用）：`_rewrite-sm29.js`（SM-2.9）、`_migrate-xhs.js`、`_migrate-yaozh.js`、`_smoke-runtime.js`、`_smoke-sm210.js`。备份：`backup-pre-sm29-20260907`（原始）+ `backup-pre-sm10-20260907`（SM-2.9 后）。
+
+**工具链升级**：verifier v3（页面上下文 mock：window/__INITIAL_STATE__/document/location/cookieStore/fetch/DOMParser，按 adapter 提供 hostname+路径提示；**刻意不提供 bb**——幽灵引用在沙箱即炸；超时 5s 的 adapter 诚实标 skipped 而非 fail）；bb-eval 新增 `no-ghost-api` 检查（注释提及不误报）；合约 social-media v1 错误枚举增补 `NAVIGATE_REQUIRED`（action=`open <url>`）。
+
+**踩坑记录**：① walker 一行式 `if (Array.isArray(v)) for (...) if (...) walk(); else if (...)` —— else 绑到内层 if，对象子节点全部漏遍历（最小用例隔离后修复）；② Python 写 JS 内联脚本时 `\n` 变真实换行 → node -e 语法错误被 bash `$( )` 吞掉 → 假 PASS，改用 `String.fromCharCode(10)`；③ 活体调试依赖「先 1+1 再碰 DOM」的分层探测。
+
+### 回归结果
+
+- 全量运行时编译 98/98；幽灵调用扫描 0。
+- verifier：social-media 15 pass / 0 fail / 1 skipped（post-create 等 creator 对话框超 5s 沙箱视野，待活体验证）。
+- bb-eval：ybm 132/0/0，1688 158/2w/0，yaozh 164/11w/0，xhs 437/0/0（每文件 +no-ghost-api）；ysbang 15 fail = 既有旧债不变。
+
+### 活体冒烟第一轮（daemon HTTP，full-scope session）
+
+| Adapter | 结果 |
+|---|---|
+| ybm/auth | ✅ Not-authenticated envelope（未登录，等授权） |
+| ybm/search | ✅ NAVIGATE_REQUIRED + 正确落地 URL —— 新模式活体验证 |
+| xhs/auth | ✅ **happy path**：浏览器有会话，auth_read + userId 返回 |
+| xhs/search | ✅ home→NAVIGATE_REQUIRED；打开搜索页→执行到底，Vuex 无结果 → 诚实 NOT_FOUND（SPA 搜索结果需登录态/换词重试） |
+| 1688/search | ✅ 在 offer_search 页直接 success envelope（约束三元组 + 241 元素）；标题可见站点侧 GBK 乱码（自修复块已移除，如需可改 fetch+TextDecoder 方案） |
+| 1688/auth | ⛔ www.1688.com 首页标签页会退化到 eval 完全无响应（反自动化）——环境限制；auth 可在 s.1688.com 页跑（hostname 检查含子域） |
+| yaozh/yaopinjiage | ⚠️ Failed to fetch —— 冒烟脚本匹配到 www.yaozh.com 门户标签页（跨源 CORS）；需 db.yaozh.com 域标签页重跑，adapter 本身逻辑未证伪 |
+
+### Round 2 清单（等用户在浏览器授权登录后重跑）
+
+1. ybm 登录 → auth/cart-list/search happy path。
+2. 1688 登录 → auth 在 s.1688.com 页重跑；cart-list 等。
+3. yaozh：开 db.yaozh.com 标签页重跑 yaopinjiage（预期 public 数据可直接出 records）。
+4. xhs 登录态已有 → search 换词/带登录重跑；post-create 等 UI 型 adapter 活体验证。
