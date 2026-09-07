@@ -319,9 +319,18 @@ async function verifyAdapter(adapter) {
   const issues = [];
   const src = fs.readFileSync(adapter.path, 'utf8');
 
-  // Syntax check.
+  // Syntax check: the file must parse as a module AND the body (what the
+  // runtime actually evaluates) must compile as a single expression.
+  let body = src;
+  const metaMatch = src.match(/\/\*\s*@meta[\s\S]*?\*\//);
+  if (metaMatch) body = src.slice(metaMatch.index + metaMatch[0].length).trim();
   try { new vm.Script(src, { filename: adapter.path }); }
   catch (e) { issues.push(`syntax error: ${e.message}`); return { adapter, ok: false, issues }; }
+  try { new vm.Script('(' + body + ')', { filename: adapter.path }); }
+  catch (e) {
+    issues.push(`body does not compile as a single runtime expression ((body)(args), per bb-browser site.ts): ${e.message}`);
+    return { adapter, ok: false, issues };
+  }
 
   // @meta check.
   const meta = extractMeta(src);
@@ -347,31 +356,20 @@ async function verifyAdapter(adapter) {
     issues.push(`write adapter must have accessTier: auth_write (got: '${meta.accessTier}')`);
   }
 
-  // Load + invoke adapter in sandbox.
+  // Load + invoke adapter in sandbox — runtime-identical: evaluate `(body)` as
+  // one expression (site.ts wraps it as `(body)(argsJson)`); the value IS the
+  // entry function. No module.exports involved.
   const sandbox = {
     bb: makeMockBb(adapter.adapter),
     setTimeout, clearTimeout, setInterval, clearInterval, Promise,
     URL, JSON, Date, Math, Object, Array, String, Number, Boolean,
     Error, TypeError, console,
-    module: { exports: {} },
   };
-  sandbox.exports = sandbox.module.exports;
   try {
-    // Append module.exports = { fnName } to surface the named function.
-    const fnName = adapter.adapter === 'auth' ? 'auth'
-      : adapter.adapter === 'post-detail' ? 'postDetail'
-      : adapter.adapter === 'comment-post' ? 'commentPost'
-      : adapter.adapter === 'user-notes' ? 'userNotes'
-      : adapter.adapter === 'post-create' ? 'postCreate'
-      : adapter.adapter === 'post-delete' ? 'postDelete'
-      : adapter.adapter === 'comment-delete' ? 'commentDelete'
-      : adapter.adapter.replace(/-./g, (m) => m[1].toUpperCase());
-    const wrappedSrc = `${src}\n;module.exports = { ${fnName} };`;
-    const script = new vm.Script(wrappedSrc, { filename: adapter.path });
-    const module = script.runInNewContext(sandbox);
-    const fn = module[fnName] || module[adapter.adapter];
+    const script = new vm.Script('(' + body + ')', { filename: adapter.path });
+    const fn = script.runInNewContext(sandbox);
     if (typeof fn !== 'function') {
-      issues.push(`exported function '${fnName}' not found (or not a function)`);
+      issues.push('runtime expression did not evaluate to a function');
       return { adapter, ok: false, issues, meta };
     }
     const args = defaultArgsFor(adapter.adapter);
