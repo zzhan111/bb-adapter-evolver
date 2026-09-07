@@ -1,7 +1,7 @@
 ---
 title: Runtime verification
 type: wiki-workflow
-last_updated: 2026-06-28
+last_updated: 2026-09-07
 ---
 
 # Runtime verification
@@ -12,21 +12,25 @@ last_updated: 2026-06-28
 
 | Tool | What it sees | What it misses |
 |---|---|---|
-| `bb-eval` (static) | `@meta` block, source keywords, URL constants, no-creds | Anonymous-function syntax errors, undefined variables at call time, envelope shape at runtime |
+| `bb-eval` (static) | `@meta` block, source keywords, URL constants, no-creds, and whether the body compiles as the runtime's single expression | Undefined variables at call time, envelope shape of actual returns |
 | `verify-adapter-runtime-shape.js` (sandbox) | Envelope shape, error paths, basic meta validation | Real DOM selectors, real API responses, real timing |
 
 You need both. The static check is fast and catches contract violations; the runtime verifier catches **bugs the static check was never going to find**.
 
-## Why this tool exists (2026-06-19 incident)
+## Why this tool exists (2026-06-19 incident — corrected 2026-09-07)
 
 SM-2.8 attempted to **really test** all 16 social-media adapters via bb-browser MCP, but `browser_eval` started returning `{}` mid-session and `browser_close_all` only closed tracked tabs. The MCP eval channel was broken.
 
-The fix was a sandbox runtime-shape verifier — run the adapter in Node `vm` with mocked `bb.goto` / `bb.eval` / `window`, inspect the returned object. This caught a class of bugs `bb-eval` had silently approved:
+The fix was a sandbox runtime-shape verifier — run the adapter in Node `vm` with mocked `bb.goto` / `bb.eval` / `window`, inspect the returned object.
 
-- **14 ecommerce/pharma-data adapters** (`1688/*` × 12 + `yaozh-auth` + `yaopinzhongbiao`) declared `async function(args) { ... }` — anonymous function expression, which is **invalid JavaScript** (and silently broken when called as a named export).
-- **bb-eval never noticed** because it only greps for keywords.
+The verifier's first cross-domain run (SM-2.8) flagged 14 ecommerce/pharma-data adapters (`1688/*` × 12 + `yaozh-auth` + `yaopinzhongbiao`) as "broken anonymous-function syntax". **That conclusion was inverted.** A 2026-09-07 runtime audit corrected the record:
 
-After the fix, **16/16 social-media adapters PASS** the runtime-shape check; cross-domain regression exposed 14 silently broken ecommerce/pharma-data adapters.
+- The real runtime (`bb-browser site.ts`) strips the first `@meta` block and evals the remaining body as **one expression**, `(body)(args)`. The bare single-function format (`async function(args) { ... }`) is exactly what the runtime expects — those 14 files were **never broken**.
+- What actually broke 43 adapters (ybm 9, 1688 11, xhs 16, yaozh 7) was the **June-29 rewrite** into multi-statement format (top-level `const` + `module.exports`): wrapped as an expression, `(const ...; module.exports = ...)(args)` throws `SyntaxError: Unexpected token 'const'` at runtime.
+- `node --check` and standalone-module parsing report the **opposite** verdict, because they parse the file as a module rather than as an expression. bb-eval's Check 0 was replaced on 2026-09-07 to compile `(body)` — runtime-identical (see [bb-eval](bb-eval.md)).
+- The sandbox verifier itself calls adapters through a named-export (module) convention, which is why it passed the June-29 rewrites that the runtime rejects. **Re-aligning the verifier to `(body)(args)` semantics is part of SM-2.9.**
+
+Lesson: every execution environment (runtime eval, Node module, vm sandbox) has its own parse semantics — a "syntax error" verdict is only meaningful relative to the environment that will actually run the code.
 
 ## How to use it
 

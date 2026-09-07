@@ -15,7 +15,7 @@ This page is the **onboarding path**. If you arrived here because someone asked 
 
 1. **Contracts** — normative specs per domain (ecommerce, pharma-data, social-media) that say exactly which adapter names exist, what they return, and what is forbidden.
 2. **`bb-eval`** — a static checker that scores any adapter against the contract for its domain in <1s. Every FAIL must be fixed before merge.
-3. **`verify-adapter-runtime-shape.js`** — a sandboxed runtime verifier that catches bugs `bb-eval` cannot (anonymous functions, undefined variables, envelope-shape mistakes).
+3. **`verify-adapter-runtime-shape.js`** — a sandboxed runtime verifier that catches bugs `bb-eval` cannot (undefined variables at call time, envelope-shape mistakes).
 
 The repo also ships **methodology** (`reverse-engineering`, `evaluation`, `setup`), **decisions** (why we made the choices we made), and **skills** (the system prompts coding agents read).
 

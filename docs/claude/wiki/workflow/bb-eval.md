@@ -109,7 +109,7 @@ These are runtime concerns:
 - Pagination cursor round-trips correctly.
 - Auth is honored (the adapter doesn't silently fail open without login).
 - Side effects are bounded (cart-add adds exactly the requested quantity, not more).
-- Anonymous-function syntax errors (this slipped past bb-eval for 14 ecommerce/pharma-data adapters — see [runtime verification](runtime-verification.md)).
+- Envelope branches that only fail at runtime (the sandbox verifier covers this). Note: the earlier claim that "anonymous-function syntax errors slipped past bb-eval" was **inverted** by the 2026-09-07 runtime audit — the bare single-function format is what the runtime expects; multi-statement files are what break it, and Check 0 now compiles the body runtime-identically. See [runtime verification](runtime-verification.md).
 
 Use `tools/verify-adapter-runtime-shape.js` for envelope-shape confidence, and bb-browser MCP for end-to-end runtime verification.
 
@@ -141,6 +141,7 @@ The contract is wrong, the check is wrong, or the adapter is wrong — diagnose 
 | 2026-06-16 | `PHR-3 url-constant` ran before `$HEADER` was defined | Reordered to run after Check 1 |
 | 2026-06-18 | Domain-detection heuristic only ran against `@meta.domain`, missing ecommerce hostname-only adapters | Now runs against both `@meta.domain` and `@meta.name` |
 | 2026-06-19 | Static check did not catch anonymous-function syntax errors in 1688/yaozh adapters | Surfaced in [runtime verification](runtime-verification.md); `node --check` recommended for future bb-eval extension |
+| 2026-09-07 | **The 2026-06-19 conclusion was inverted.** The runtime (`site.ts`) evals the body as one expression `(body)(args)`: the bare single-function format is valid, and the June-29 multi-statement rewrite is what broke 43 adapters. `node --check` parses files as standalone modules and reports the opposite verdict. | Check 0 replaced: it now wraps the body as `(body)` and compiles it with `vm.Script` (runtime-identical). Also added `ybm100.com` to the ecommerce hostname heuristics |
 
 ## Related
 
