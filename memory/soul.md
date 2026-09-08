@@ -743,3 +743,23 @@ SM-2 关闭 (4 实测 + 11 静态 0 fail)。SM-3 (twitter/bilibili 跨站点) �
 2. 1688 登录 → auth 在 s.1688.com 页重跑；cart-list 等。
 3. yaozh：开 db.yaozh.com 标签页重跑 yaopinjiage（预期 public 数据可直接出 records）。
 4. xhs 登录态已有 → search 换词/带登录重跑；post-create 等 UI 型 adapter 活体验证。
+
+### SM-2.10 Round 2（用户登录 ybm 后重跑）+ 迁移暴露的 3 个潜在 bug 修复
+
+| Adapter | 结果 |
+|---|---|
+| ybm/auth | ✅ **happy path**：真实商户 accountId 1111205470 / 天津市正顺大药房有限公司第一分公司 |
+| ybm/cart-list | ✅ 真实购物车：28 种 / 59 件 / ¥237.90，约束三元组齐全 |
+| ybm/search | ✅ NAVIGATE_REQUIRED 两段式端到端：home→导航 envelope→打开搜索页→真实结果（约束三元组） |
+| 1688/search | ✅ 真实结果页 success envelope（s.1688.com 页直跑） |
+| 1688/auth | ⚠️ Not-authenticated envelope 正确（1688 未登录）；首页 eval 退化为环境限制 |
+| yaozh/yaopinjiage | ✅ **fetch+DOMParser 模式端到端**：真实请求 `name=阿莫西林` 发出，envelope 合规（records 空为抓取参数调优项） |
+| xhs/search | ⚠️ 登录态下 NOT_FOUND（SPA 搜索状态需页内交互触发，诚实返回，round 3 深挖） |
+| xhs/user(me) | ✅ NAVIGATE_REQUIRED 正确（当前在搜索页非 profile） |
+
+**迁移暴露并修复的 3 个潜在 bug**（全部是原文件从未被执行到的死代码路径）：
+1. `bb.$eval(...).catch(...)` 内联后同步返回值无 `.catch` → 5 文件 × 2 处包 async try/catch（acorn 定位）。
+2. 包装器对函数型 catch fallback 少一次调用（`return (() => '0')` → `(() => '0')()`）。
+3. yaopinjiage 原文件 total 类型不一致（回调返回 number、外层调 `.replace`）→ 类型容错。
+
+**遗留清单**：① yaozh 5 库搜索参数/结果解析按真实站点调优（records 空）；② xhs search 的 SPA 搜索触发方式（页内交互或登录后 state 键确认）；③ 1688 auth 需登录 + 绕开首页 eval 退化（在 s.1688.com 页跑）；④ post-create 等 UI 型 adapter 活体验证。
