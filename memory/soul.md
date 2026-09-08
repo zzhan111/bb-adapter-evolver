@@ -989,3 +989,26 @@ async API 数据格式：`{params: {operator: "...", data: {...}}}` — operator
 - **8/11 可用**（search/product/auth/cart-list/store-freight/store-search/order-list/order-detail），全部通过 screenshot 逐字段验证
 - **3/11 不可用**（cart-add/cart-remove/checkout-preview）——需要 mtop 库完整初始化流程或 Puppeteer 级别的浏览器自动化
 - 所有修复过程和技术发现已记录并推送至 PR #1
+
+## 2026-09-08 — mtop 签名调用最终结论：partitioned cookie 是不可绕过的浏览器安全边界
+
+### 实验结果
+
+| 尝试 | 结果 |
+|---|---|
+| Node.js 侧 MD5 签名 + 页内 fetch POST | `FAIL_SYS_ILLEGAL_ACCESS`（render）/ `FAIL_SYS_TOKEN_EMPTY`（async） |
+| 原因 | cookieStore 能**读** partitioned cookie（unb/_m_h5_tk），但 fetch 的 `credentials:include` **不发送**它们（CHIPS 分区隔离） |
+| 结论 | **浏览器安全模型限制**，非 adapter 层可解决 |
+
+### 完整诊断链
+
+1. `document.cookie` 看不到 partitioned cookie → cookieStore 能看到
+2. `cookieStore` 能读但 `fetch credentials:include` 不发送（CHIPS 分区）
+3. `window.lib.mtop.request` 调用挂起（mtop 库内部依赖未初始化的分区 cookie）
+4. 手动 MD5 签名 + fetch → 服务器收不到 token → `FAIL_SYS_TOKEN_EMPTY`
+
+### 三条可行路径（bb-browser 之外）
+
+1. **Puppeteer/Playwright**：通过 CDP 协议操作浏览器，可以发送受信任的鼠标事件（isTrusted=true）和正确的 cookie 分区上下文
+2. **bb-browser daemon 增强**：增加 `clickAt {x,y,tabId}` action（调 CDP `Input.dispatchMouseEvent`）
+3. **mtop 手动抓包**：人工在浏览器中加购一次，从 DevTools Network 面板捕获真实 API 请求参数，硬编码到 adapter
