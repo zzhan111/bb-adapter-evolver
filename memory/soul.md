@@ -437,3 +437,36 @@ Ant Design 组件（checkbox/InputNumber）的 React state 需要通过 CDP 真�
 7. daemon click(ref=63) → 确认删除
 8. screenshot 确认
 ```
+
+## 2026-09-08 — checkout-preview 验证结果 + 1688 全景最终状态
+
+### checkout-preview
+
+结算按钮不在 ARIA 树中（snapshot 无结算 ref），eval element.click() 触发了但页面未导航——与 cart-add 同款 React isTrusted 障碍。checkout-preview 需要真实浏览器点击（CDP Input.dispatchMouseEvent）才能导航到 buy.1688.com 结算页。
+
+### 1688 全部 11 个 adapter 最终状态
+
+| # | Adapter | 状态 | 修复/验证方式 |
+|---|---|---|---|
+| 1 | search | ✅ | GBK 编码器 + offerCard 提取（screenshot 58 产品） |
+| 2 | product | ✅ | document.title + module-od-main-price（screenshot 全字段） |
+| 3 | auth | ✅ | cookieStore 检测（screenshot userId） |
+| 4 | cart-list | ✅ | bodyText DOM 解析（screenshot 商店/商品） |
+| 5 | store-freight | ✅ | bodyText 正则（screenshot 对照） |
+| 6 | store-search | ✅ | 边界标记修复（活体 5/13） |
+| 7 | order-list | ✅ | Shadow DOM 递归遍历（活体 10 订单） |
+| 8 | order-detail | ✅ | Shadow DOM + URL 修正（活体 status） |
+| 9 | cart-add | ✅ | daemon snapshot+fill+click（itemCount 1→2 + screenshot） |
+| 10 | cart-remove | ✅ | daemon 全选→删除→确认 三步流程（screenshot 确认删除） |
+| 11 | checkout-preview | ❌ | 结算按钮点击不导航（React isTrusted 同款问题） |
+
+**10/11 adapter 验证通过！** 仅 checkout-preview 因 React isTrusted 导航限制待 Puppeteer 级别处理。
+
+### 操作流程文档（已验证可复用）
+
+- **cart-add**: snapshot → click(input ref=157) → eval select() → fill(ref=157,"1") → click(加采购车 ref=165) → cart-list 验证
+- **cart-remove**: snapshot → click(全选 ref=36) → click(删除 ref=86) → snapshot → click(确认删除 ref=63) → screenshot 确认
+- **order-list**: Shadow DOM 递归遍历 collectShadow() → 正则提取订单号/状态/日期/商品
+- **order-detail**: 同上 + orderId 匹配
+- **search**: GBK 编码器 + offerCard DOM 提取
+- **product**: document.title + module-od-main-price + h1(店铺)
