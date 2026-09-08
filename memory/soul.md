@@ -389,3 +389,25 @@ cart-add 不能作为独立 adapter 在页面上下文运行——它需要 daem
 ### cart-remove 方案
 
 cart-remove 可以用同样的 snapshot+click 方式：在购物车页面找到删除按钮的 ref 并 click。不需要 mtop API。
+
+## 2026-09-08 — 1688 最终验证总结
+
+### 已验证通过（screenshot 逐字段对照）8/11
+
+search ✅ / product ✅ / auth ✅ / cart-list ✅ / store-freight ✅ / store-search ✅(5/13) / order-list ✅ / order-detail ✅
+
+### cart-add ✅ 突破（daemon snapshot+fill+click 方案）
+
+操作流程：snapshot → click(input ref) 聚焦 → eval select() → fill(ref, "1") → click(加采购车 ref) → cart-list 确认 itemCount 1→2 → screenshot 确认郑州林诺商品出现在购物车
+
+### cart-remove ⚠️
+
+删除按钮已找到（ref=86 "删除"）并点击成功，但购物车商品的 checkbox 未被选中（点击坐标偏差 + React checkbox state 未更新）。正确流程需要：先勾选商品级 checkbox → 然后点删除。checkbox 的 React state 更新与 cart-add 的 InputNumber 是同类问题。
+
+### checkout-preview ⏳
+
+依赖购物车商品被选中。cart-remove 验证通过后即可测试。
+
+### 3 个写操作 adapter 的统一障碍
+
+Ant Design 组件（checkbox/InputNumber）的 React state 需要通过 CDP 真实鼠标/键盘事件更新。bb-browser 的 eval click + dispatchEvent 不够，daemon 的 ref-based click 可以触发部分事件但 checkbox 选中仍需精确坐标匹配。根本解法是 bb-browser daemon 增加 `clickAt {x,y}` action 或使用 Puppeteer 做写操作。
