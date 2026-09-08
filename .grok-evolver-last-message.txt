@@ -1,0 +1,20 @@
+PRD path: /home/zhang/.openclaw/workspace/bb-adapter-evolver/prd-bb-adapter-evolver.md
+PRD copy: C:\Users\zhang\Downloads\prd-bb-adapter-evolver.md
+SHA256: 20562020ce9f1df33f2163e55ea8ce24b957da5d5215858884e1255fa7bc1c2d
+Lines: 411
+Branch: feat/social-media-contract
+HEAD: 44b08997f08670299970582ba97cd9145524aa41
+Observed at session start: 6da9fafa114892e16ccb90d67a5c572b0e1b3778
+No commit / no push / no release.
+Working tree extra (untracked only): prd-bb-adapter-evolver.md, .grok-evolver-brief.md, .grok-evolver-prd-prompt.md, .grok-evolver-last-message.txt
+
+TLDR
+evolver owns the definition of a good adapter (three-domain contracts, SKILL, bb-eval). ma-browser v0.13 owns freeze runtime, TTL cache, persisted health, dynamic-MCP spike. Hands-on: bash tools/bb-eval --domain ecommerce ~/.bb-browser/sites/1688/adapters/search.js → 16 pass / 0 warn / 0 fail. Same checker FAILs all three official TEMPLATEs on no-ghost-api (bb.goto). Phase 4 darwinian still not justified.
+
+Suggested milestones (from PRD §10)
+M0 Teach the real runtime (1–2d): strip bb.* from TEMPLATEs/SKILL/wiki; make bb-eval invocable as documented (chmod +x or only teach `bash tools/bb-eval`). Exit: three TEMPLATEs 0 FAIL.
+M1 Freeze quality gate (2–3d): stable --json; accept source:freeze-draft extra meta; cross-domain secret grep; NAVIGATE_REQUIRED in ecommerce contract. Exit: a freeze draft can be scored; Cookie literal FAILs.
+M2 Envelope honesty (0.5–1d): success vs ok cheat sheet; do not rewrite 80 adapters unless separately decided.
+M3 Health heuristics doc (0.5–1d): map static FAILs / LOGIN_REQUIRED / NAVIGATE_REQUIRED to daemon H3 actions. No health JSON writer here.
+M4 SM-3 (2–4d, P1): one twitter OR bilibili read adapter, 0 FAIL. Not a 13-P0 rewrite.
+Do not schedule: darwinian evolver, TTL cache, MCP registerTool, 1688 cart-add CDP, moving adapters into this repo.
