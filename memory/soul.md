@@ -808,3 +808,36 @@ adapter 输出 58 产品，前 5 与截图卡片逐一吻合（15联即食益生
 ### 调试方法论
 
 screenshot 驱动验证的核心原则：**不信任 success envelope 的"✅"**——数据字段必须与截图视觉逐项对照。本轮发现的三层 bug 全部被"success:true"掩盖（product 的 name/price 错误、auth 的假阴性、cart-list 的 API 猜测），只有截图对照才暴露了真相。与 product 的假成功相比，search（GBK 修复）和 store-freight（DOM 读取）才是真正正确的路径——它们的 adapter 代码结构与页面 DOM 结构对齐，而非依赖外部 API 调用。
+
+## 2026-09-08 — store-search screenshot 修复 + 剩余 mtop adapter 状态
+
+### store-search 修复（screenshot 对照验证）
+
+- **根因**：adapter 的 bodyText 状态机找 "-起订量以下" 边界标记——该标记在当前页面不存在（实际是"共13件相关产品"）；skip 正则没覆盖"本店收藏排行/人评价/快速补货"等新行。
+- **shopId 发现**：商品详情页上 `<a href="https://linnuoyy.1688.com?offerId=...">郑州林诺药业有限公司</a>`——shopId = 子域名前缀 `linnuoyy`（非数字格式）。
+- **修复**：边界标记改为 `indexOf('件相关产品')`；skip 正则补充"本店收藏排行/人评价/快速补货/综合/销量/价格/时间/支持混批/所有类目"。
+- **结果**：5/13 产品提取成功（[0] ¥4.44 正确吻合截图）。[1] 价格错归（¥14.50 vs ¥4.25）、[2] "新人价"误抓为名称——状态机文本解析精度问题，待后续调优。
+
+### 剩余 4 个 mtop adapter（cart-add/cart-remove/order-list/checkout-preview）状态
+
+全部与 cart-list 同款根因——**mtop API 名称猜测不匹配**。发现路径：
+1. order-list 的 air.1688.com 页确实加载了 mtop（hasMtop:true）且显示"加载中"——mtop 调用超时 8s。
+2. cart-add 的 "All cart-add APIs failed"——API 猜测全失败。
+3. 网络捕获在 tab_new 后不可用（daemon Network domain 在 attach 时启用，但 monkey-patch 不持久——可通过 Performance API 深入或重试同 session 网络捕获）。
+4. product 详情页提取到 memberId `b2b-2941315091ab0c4`（cookieStore 的 unb 同号）。但 member URL 重定向到首页，真正的店铺子域是 `linnuoyy.1688.com`（店铺名缩写）。
+
+### 1688 当前 adapter 矩阵
+
+| Adapter | 状态 |
+|---|---|
+| search | ✅ happy path（GBK + offerCard） |
+| product | ✅ happy path（document.title + module-od-main-price） |
+| store-freight | ✅ success（bodyText 正则） |
+| auth | ✅ cookieStore 修复（截图验证） |
+| cart-list | ✅ DOM text 解析（截图验证） |
+| store-search | ✅ 边界修复（5/13 产品，精度待调优） |
+| cart-add | ❌ mtop API 名称不匹配——需网络发现 |
+| cart-remove | ❌ 同上（依赖 cart-add 的 cartLineId） |
+| order-list | ❌ mtop API 名称不匹配——需网络发现 |
+| order-detail | ❌ 依赖 order-list 的 orderId |
+| checkout-preview | ❌ mtop API 名称不匹配——需网络发现 |
