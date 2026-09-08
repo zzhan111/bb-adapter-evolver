@@ -344,3 +344,20 @@ yaoex P0 已满，ysbang 已有 9/9。现在 yaozh 6+1（其中 yaopinzhongbiao 
 - `upkg/od-sku-selection/0.26.6/index.amd.js` — SKU 选择模块
 
 加购 API 可能在 `od-sku-selection` 的动态加载子模块中（60KB 可能只是入口文件），或使用非 mtop 协议（如 REST）。后续需用 Chrome DevTools Network 面板人工加购一次来抓包。
+
+## 2026-09-08 — cart-add 数量设值突破 + Ant Design InputNumber React state 障碍
+
+### 突破
+
+1. **数量输入框找到了**：`<input type="text" class="ant-input-number-input">` — Ant Design InputNumber 组件，两个（每个 SKU 一个），初始值 "0"
+2. **Native setter + dispatchEvent 成功设置了 DOM value**：`verify qty: ["1","0"]` — 第一个 SKU 数量视觉上变为 1
+
+### 最后一层障碍
+
+设置 DOM input value + dispatchEvent 触发了 React 的 input/change 事件，但 **Ant Design InputNumber 的内部 React state 仍然为 0**。Ant Design InputNumber 不是简单的 controlled input——它有自己的 value 管理层。DOM 层的值修改不等于 React state 的更新。加购校验读取的是 React state 而非 DOM value → `AMOUNT_EMPTY` 仍然触发。
+
+### 解法（需要以下之一）
+
+1. **CDP `Input.dispatchKeyEvent`**：聚焦 input → 发送真实键盘事件 "1" → Ant Design 识别键盘输入 → React state 更新
+2. **找到 Ant Design InputNumber 的 increase handler**：`+` 按钮不是文本 "+"——可能是 SVG 图标或自定义组件。用 DOM 遍历找到 `ant-input-number-group-addon` 中的可点击元素
+3. **React Fiber 直接调 setState**：深入 InputNumber 组件的 fiber 找到 setState 函数并直接调用
