@@ -788,3 +788,23 @@ adapter 输出 58 产品，前 5 与截图卡片逐一吻合（15联即食益生
 - daemon `screenshot` action 存图于 **daemon 自己的 BB_BROWSER_HOME**（本机为 `C:\Users\zhang\.pinix\data\browser\screenshots\`，由 tray-app 拉起时注入），响应路径是 `pinix://browser/...` 虚拟 schemes，需按名字 find。
 - www.1688.com 首页标签页会**退化到 eval 完全无响应**（1+1 都超时，站点反自动化）——1688 冒烟/调试一律直接开 offer_search 深链。
 - bash 单引号内嵌 JS 的转义三连坑：`\n` 变真实换行（用 String.fromCharCode(10)）、正则内 `\d` 警告（行为仍对）、`?.` 与嵌套模板易炸（探针写成文件跑）。
+
+## 2026-09-08 — 1688 三个 adapter screenshot 驱动修复 + 视觉验证
+
+### 三个 bug 的根因与修复
+
+1. **auth 假阴性**：用 `document.cookie` 检测登录态，但 1688 的 `unb`/`cookie2`/`_tb_token_` 等登录 cookie 是 partitioned cookie，`document.cookie` 不可见（与 XHS a1 同款 HttpOnly/分区盲区）。**修复**：改用 `window.cookieStore.getAll()` 拿全量 cookie，检测 `unb` 为登录标志，`lid` 解码取昵称；删除 mtop 调用（冗余且会挂起）。
+2. **cart-list "All cart APIs failed"**：猜了 3 个 mtop API 名（`querycarts`/`cartlist`/`query`）全部不存在——购物车数据是**服务端直出到 DOM**（无数据 XHR）。**修复**：丢弃 mtop 路径，改为 bodyText 正则解析（与 store-freight 同模板：店铺名正则 → per-store section → item 行/价格行提取）。
+3. **product name/price 全错**：`[class*="title"]` 匹配到了 `.winport-title`（店铺头条"郑州林诺药业有限公司关注客服商品"）；`[class*="price"]` 匹配到了 `.price-indication`（法律免责声明全文）。**修复**：标题改用 `document.title`（去掉" - 阿里巴巴"后缀，因为 h1 是店铺名不是商品名）；价格改用 `.module-od-main-price` / `.od-price-container`（避开 `.price-indication`/`.price-desc` 免责声明）；公司从 `h1` 提取。
+
+### Screenshot 复验结果（全部吻合）
+
+| Adapter | 截图真相 → adapter 输出 |
+|---|---|
+| auth | 登录态购物车页 → `authenticated:true, userId:2941315091, nick:微架儿, cookieCount:23, token:valid` ✅ |
+| cart-list | 沈阳修农特/修正益生菌×2/¥6.80/¥6.30/12.60 → storeName+title+spec+unitPrice+discountedPrice+subTotal 全字段吻合 ✅ |
+| product | 标题"15联即食益生菌粉…"/新人价¥4.44/郑州林诺药业 → name+company+price+spec 全字段吻合 ✅ |
+
+### 调试方法论
+
+screenshot 驱动验证的核心原则：**不信任 success envelope 的"✅"**——数据字段必须与截图视觉逐项对照。本轮发现的三层 bug 全部被"success:true"掩盖（product 的 name/price 错误、auth 的假阴性、cart-list 的 API 猜测），只有截图对照才暴露了真相。与 product 的假成功相比，search（GBK 修复）和 store-freight（DOM 读取）才是真正正确的路径——它们的 adapter 代码结构与页面 DOM 结构对齐，而非依赖外部 API 调用。
