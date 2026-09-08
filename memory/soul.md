@@ -864,3 +864,17 @@ air.1688.com 是 **Shadow DOM Web Component SPA**：`APP-ROOT`/`ALI-BAR`/`Q-DIAL
 
 - **cart-add/cart-remove/checkout-preview**：cart.1688.com 数据是服务端直出 DOM（非 shadow DOM），DOM 读取模式与 cart-list/store-freight 相同，但 cart-add 是**写操作**（mtop POST），DOM 读取无法替代。需要发现真实的写 API 或模拟页面交互（点击"加采购车"按钮）。
 - **order-detail**：依赖 order-list 的 orderId，shadow DOM 提取的 orderId 可直接使用。order-detail 页面也可能用 shadow DOM——同一方案可复用。
+
+## 2026-09-08 — order-detail Shadow DOM 修复
+
+### 修复
+
+- **URL 修正**：`buyer-order-detail.html` → `trade-order-detail/index.html`（从 order-list 页的 shadow DOM 内链接发现）
+- **提取重写**：mtop → shadow DOM 递归遍历（同 order-list 方案）
+- **活体验证**：orderId=3310657212279027183 → `success:true, status:"等待卖家发货"` ✅
+
+### 精度问题（后续调优）
+
+- product 字段包含 UI 噪声文本（担保服务说明等）
+- company 字段包含导航菜单文本
+- 需要更精细的状态机过滤（同 order-list/store-search 的精度调优需求）
