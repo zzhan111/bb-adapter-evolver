@@ -939,3 +939,25 @@ search ✅ / product ✅ / auth ✅ / cart-list ✅ / store-freight ✅ / store-
 | cart-add | ❌ | 需 CDP dispatchMouseEvent（isTrusted） |
 | cart-remove | ❌ | 依赖 cart-add |
 | checkout-preview | ❌ | 需 mtop API 发现 |
+
+## 2026-09-08 — cart-add 最终验证：ARIA 注入 + "+"按钮探测均失败，确认工具链上限
+
+### ARIA 注入方案结果
+
+- **注入成功**：给 SKU SPAN（15联*10袋/12联*20袋）注入 `role="button" aria-label tabindex=0` 后，快照确实能看见它们（ref=159/160/162 + ref=165/166/168）
+- **daemon ref-click 执行成功**（click OK），但购物车 itemCount 仍为 1 不变
+- **"+"按钮**：ARIA 注入 + Performance API + eval 全面搜索均找不到——可能是 SVG 图标或 canvas 绘制的自绘组件，不以文本"+"存在于 DOM 中
+
+### 确认的工具链上限
+
+bb-browser 当前的交互能力（eval click + daemon ref-click）无法穿透 1688 SPA 的以下防线：
+1. React 18 的 `isTrusted` 检查（dispatchEvent 的合成事件 isTrusted=false）
+2. React 合成事件系统（element.click() 不触发 onChange 处理器）
+3. SKU 组件不使用标准 HTML 按钮/输入（数量控制可能是 SVG/自绘）
+4. Shadow DOM 隔离（部分内容在 custom element 的 shadowRoot 内）
+
+### 解决路径（需要工具链增强或新工具）
+
+1. **bb-browser daemon 增加 `clickAt {x,y}` action** — 调用 `CDP Input.dispatchMouseEvent` 发送 mousePressed+mouseReleased（isTrusted=true 的原生事件），与 Puppeteer 的 `page.click()` 等效
+2. **Puppeteer/Playwright** — 用专门的浏览器自动化框架替代 bb-browser 做写操作（读操作继续用 bb-browser）
+3. **mtop API 手动抓包** — 用 Chrome DevTools 的 Network 面板手动加购一次，记录真实 API 调用和参数
