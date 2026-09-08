@@ -763,3 +763,28 @@ SM-2 关闭 (4 实测 + 11 静态 0 fail)。SM-3 (twitter/bilibili 跨站点) �
 3. yaopinjiage 原文件 total 类型不一致（回调返回 number、外层调 `.replace`）→ 类型容错。
 
 **遗留清单**：① yaozh 5 库搜索参数/结果解析按真实站点调优（records 空）；② xhs search 的 SPA 搜索触发方式（页内交互或登录后 state 键确认）；③ 1688 auth 需登录 + 绕开首页 eval 退化（在 s.1688.com 页跑）；④ post-create 等 UI 型 adapter 活体验证。
+
+## 2026-09-07 — 1688/search bug screenshot 排查：GBK 关键词乱码 + 提取选择器失效，双双修复
+
+### 排查链（screenshot 驱动）
+
+1. **screenshot 1（乱码页）**：搜索框显示"益生菌"、标题乱码"鐩婄敓鑿_"、结果卡片全是**凿子/錾子**——服务端把 UTF-8 keywords 按 GBK 解读，搜的根本不是益生菌（这是 6 月原始开发者用 GBK 自修复块对抗的同一 bug，SM-2.10 迁移时随 form.submit 自导航一并移除后复发）。
+2. **选择器探测**：adapter 的 `[data-offerid]`/`[class*="offer-list"]` 在新 DOM 上 **0 命中**——新版结果页卡片是 `a[class*="offerCard"]`（CSS Modules 哈希后缀，前缀稳定），110 个 offer 链接。
+3. **GBK 编码方案三次迭代**：iframe+meta charset（失败，about:blank/现代页均继承 UTF-8）→ GBK 文档内注入表单（失败，niuren.html 也是 UTF-8）→ **TextDecoder('gbk') 反向扫描构建逐字 GBK 编码器**（成功，37ms，带缓存）。
+4. **screenshot 2（修复页）**：`keywords=%D2%E6%C9%FA%BE%FA`（益生菌真 GBK）→ 标题完美中文、58 张真实益生菌卡片（郑州林诺/健倍士/南京同仁堂）、筛选面板全是益生菌相关。
+
+### 修复内容（1688/search.js）
+
+- **GBK 编码器**：`gbkPercentEncode()` — 逐字扫描 lead 0x81-0xFE × trail 0x40-0xFE，`TextDecoder('gbk')` 比对，Map 缓存；ASCII 直通。`searchUrl` 用 GBK 编码关键词。
+- **提取重写**：`a[class*="offerCard"]` 卡片 → id（href offerId 参数）、title（最长文本行）、price（去空白后 `¥\d+(\.\d{1,2})?` 非贪婪尾界）、company（公司/厂/商贸尾行）、sales（件数行）；上限 60。
+- **NAVIGATE_REQUIRED 的 action URL 同步用 GBK 编码**——agent 打开即为正确搜索。
+
+### 活体验证（对照 screenshot）
+
+adapter 输出 58 产品，前 5 与截图卡片逐一吻合（15联即食益生菌粉/郑州林诺/¥4.44/1.5万+件 等），offerId/价格/销量/公司四字段全对。price 正则第一版贪婪吃销量（¥4.56000）已加尾界断言修复。
+
+### 调试基础设施备忘
+
+- daemon `screenshot` action 存图于 **daemon 自己的 BB_BROWSER_HOME**（本机为 `C:\Users\zhang\.pinix\data\browser\screenshots\`，由 tray-app 拉起时注入），响应路径是 `pinix://browser/...` 虚拟 schemes，需按名字 find。
+- www.1688.com 首页标签页会**退化到 eval 完全无响应**（1+1 都超时，站点反自动化）——1688 冒烟/调试一律直接开 offer_search 深链。
+- bash 单引号内嵌 JS 的转义三连坑：`\n` 变真实换行（用 String.fromCharCode(10)）、正则内 `\d` 警告（行为仍对）、`?.` 与嵌套模板易炸（探针写成文件跑）。
