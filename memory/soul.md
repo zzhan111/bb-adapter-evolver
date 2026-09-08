@@ -878,3 +878,26 @@ air.1688.com 是 **Shadow DOM Web Component SPA**：`APP-ROOT`/`ALI-BAR`/`Q-DIAL
 - product 字段包含 UI 噪声文本（担保服务说明等）
 - company 字段包含导航菜单文本
 - 需要更精细的状态机过滤（同 order-list/store-search 的精度调优需求）
+
+## 2026-09-08 — cart-add 页面交互方案结论
+
+### 尝试的方案（全部未能触发加购）
+
+1. **eval 内 `.click()`**：不触发 React 合成事件
+2. **CDP 坐标点击**（daemon click + 坐标）：daemon click 只支持 ref-based（`request.ref` 必须来自 snapshot），不支持坐标
+3. **daemon snapshot + ref-based click**：找到"加采购车"按钮 ref=165 并成功点击，但 SKU 按钮（"15联*10袋"/"12联*20袋"）**不在 ARIA 树中**——快照只有规格表行（产品名称/货号/包装规格），无可交互的 SKU 选项 ref
+4. **scrollIntoView + 刷新坐标 + 坐标点击**：SKU 仍在视口外（y=1671），scrollIntoView 后坐标更新了但仍未触发选择
+
+### 根因
+
+1688 详情页的 SKU 选择组件是 React 合成事件 + 不暴露 ARIA 树的复杂组件。bb-browser 当前的两种交互方式（eval 内 `.click()` 和 daemon ref-based click）都无法触发它的选择事件。
+
+### 解决路径（三选一，待后续实施）
+
+1. **CDP Input.dispatchMouseEvent + 精确坐标**：不经过 daemon 的 ref-based click，直接向 Chrome DevTools Protocol 发送鼠标事件——需要 daemon 支持 `dispatchMouseEvent` action（当前不支持）
+2. **mtop API 网络发现**：用 Chrome DevTools Protocol 的 `Network.enable` + 手动触发加购，捕获真实 API 和参数
+3. **React Fiber 内部调用**：找到 React 组件的内部 `addToCart` 函数并直接调用——需要深入 React Fiber 树
+
+### 当前已验证可用的 1688 adapter
+
+search ✅ / product ✅ / auth ✅ / cart-list ✅ / store-freight ✅ / store-search ✅(部分) / order-list ✅ / order-detail ✅
