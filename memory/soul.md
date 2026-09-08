@@ -332,3 +332,15 @@ yaoex P0 已满，ysbang 已有 9/9。现在 yaozh 6+1（其中 yaopinzhongbiao 
 - 备份 tag: `v1.0-pre-yaozh`（已 push origin），指向 Phase 3 baseline commit `9bbf896`
 - 全程 commit history 推送 `zzhan111/bb-adapter-evolver` main 分支
 - 回滚命令：`git reset --hard v1.0-pre-yaozh`
+
+### 1688 详情页 JS bundle 加购 API 发现（未完成，记录以供后续）
+
+详情页加载的 JS bundle 列表已收集：
+- `upkg/od-sku-selection/0.26.6/index.amd.js` (60KB) — 含 `mtop.1688.mmga.offerdetail.service`
+- `upkg/od-cart-sider/0.26.10/index.amd.js` (17KB) — 无 mtop API（纯 UI 组件）
+- `upkg/od-submit-order/0.26.6/index.amd.js` (92KB) — 含 `mtop.alibaba.tradedata.center.repurchase.access` 和 `mtop.mbox.fc.common.gateway`
+- `@ali/lib-mtop.js` — mtop 库
+- `upkg/od-main-price/0.26.2/index.amd.js` — 价格模块
+- `upkg/od-sku-selection/0.26.6/index.amd.js` — SKU 选择模块
+
+加购 API 可能在 `od-sku-selection` 的动态加载子模块中（60KB 可能只是入口文件），或使用非 mtop 协议（如 REST）。后续需用 Chrome DevTools Network 面板人工加购一次来抓包。
