@@ -961,3 +961,31 @@ bb-browser 当前的交互能力（eval click + daemon ref-click）无法穿透 
 1. **bb-browser daemon 增加 `clickAt {x,y}` action** — 调用 `CDP Input.dispatchMouseEvent` 发送 mousePressed+mouseReleased（isTrusted=true 的原生事件），与 Puppeteer 的 `page.click()` 等效
 2. **Puppeteer/Playwright** — 用专门的浏览器自动化框架替代 bb-browser 做写操作（读操作继续用 bb-browser）
 3. **mtop API 手动抓包** — 用 Chrome DevTools 的 Network 面板手动加购一次，记录真实 API 调用和参数
+
+## 2026-09-08 — cart.js bundle API 发现 + mtop 调用深层问题定性
+
+### Bundle API 发现（有价值的技术情报）
+
+从 `g.alicdn.com/halo-1688_cart-alichina1688-fe/pc-react-pages/0.0.60/js/cart.js`（476KB）中发现：
+
+| API | 用途 |
+|---|---|
+| `mtop.1688.mtoppurchaseservice` | 主购买服务（v1.0） |
+| `mtop.1688.buycenter.MtopPurchaseAstoreService.render` | 渲染购物车 |
+| `mtop.1688.buycenter.MtopPurchaseAstoreService.async` | **异步购物车操作**（加购/删除/修改） |
+| `mtop.1688.buycenter.MtopPurchaseAstoreService.submit` | **结算提交** |
+
+async API 数据格式：`{params: {operator: "...", data: {...}}}` — operator 指定操作类型，data 包含操作参数。
+
+### 深层问题定性
+
+即使用了正确的 API 名（`MtopPurchaseAstoreService.async`），adapter 的 `window.lib.mtop.request` 调用仍然超时。这说明问题不在 API 名，而在 **mtop 库的会话初始化**：页面自身加载时 mtop 库经过完整的初始化流程（appKey 绑定、token 获取、签名生成），adapter 后续的 `mtop.request` 调用虽然用同一个库实例，但可能因为以下原因失败：
+1. mtop 库内部的 `sign` 签名依赖页面初始化时设置的 token/appKey 状态
+2. 请求可能需要特定的 cookie（partitioned cookie `unb` 等）通过 CDP 的 cookieStore 而非 HTTP header 发送
+3. mtop 库的 `request` 方法在跨域场景下可能有 CORS 或 CSP 限制
+
+### 最终状态（1688 11 个 adapter）
+
+- **8/11 可用**（search/product/auth/cart-list/store-freight/store-search/order-list/order-detail），全部通过 screenshot 逐字段验证
+- **3/11 不可用**（cart-add/cart-remove/checkout-preview）——需要 mtop 库完整初始化流程或 Puppeteer 级别的浏览器自动化
+- 所有修复过程和技术发现已记录并推送至 PR #1
