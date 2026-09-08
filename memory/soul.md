@@ -841,3 +841,26 @@ screenshot 驱动验证的核心原则：**不信任 success envelope 的"✅"**
 | order-list | ❌ mtop API 名称不匹配——需网络发现 |
 | order-detail | ❌ 依赖 order-list 的 orderId |
 | checkout-preview | ❌ mtop API 名称不匹配——需网络发现 |
+
+## 2026-09-08 — order-list Shadow DOM 突破 + 剩余 adapter 定性
+
+### 根因发现
+
+air.1688.com 是 **Shadow DOM Web Component SPA**：`APP-ROOT`/`ALI-BAR`/`Q-DIALOG` 等 custom elements 均有 shadowRoot，`document.body.innerText` 只有 67 字节（穿不透 shadowRoot）。真实订单数据（77428 字符）藏在 `APP-ROOT.shadowRoot` 递归子树里。
+
+### order-list 修复（mtop → shadow DOM 遍历）
+
+- `collectShadow()` 递归遍历所有 custom element 的 shadowRoot，收集 textNode 拼接
+- 从全量文本中提取：订单号（15-25 位数字）、状态（交易成功/待付款等）、日期（YYYY-MM-DD）、商品名（长中文行）
+- **活体验证**：10 个真实订单提取成功，订单号与截图完全吻合（3310657212279027183 等）
+
+### 精度问题（后续调优）
+
+- status/date/product 的配对靠位置对齐，部分错位
+- shadow DOM 文本含 UI 噪声（"官方公告"、CSS 注释 `/*...*/`）混入 product 字段
+- 需要更精细的状态机（类似 1688/search 的 offerCard 方式——但 shadow DOM 里没有稳定的 class 选择器）
+
+### 剩余 4 个 mtop adapter 状态
+
+- **cart-add/cart-remove/checkout-preview**：cart.1688.com 数据是服务端直出 DOM（非 shadow DOM），DOM 读取模式与 cart-list/store-freight 相同，但 cart-add 是**写操作**（mtop POST），DOM 读取无法替代。需要发现真实的写 API 或模拟页面交互（点击"加采购车"按钮）。
+- **order-detail**：依赖 order-list 的 orderId，shadow DOM 提取的 orderId 可直接使用。order-detail 页面也可能用 shadow DOM——同一方案可复用。
