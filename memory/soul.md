@@ -361,3 +361,31 @@ yaoex P0 已满，ysbang 已有 9/9。现在 yaozh 6+1（其中 yaopinzhongbiao 
 1. **CDP `Input.dispatchKeyEvent`**：聚焦 input → 发送真实键盘事件 "1" → Ant Design 识别键盘输入 → React state 更新
 2. **找到 Ant Design InputNumber 的 increase handler**：`+` 按钮不是文本 "+"——可能是 SVG 图标或自定义组件。用 DOM 遍历找到 `ant-input-number-group-addon` 中的可点击元素
 3. **React Fiber 直接调 setState**：深入 InputNumber 组件的 fiber 找到 setState 函数并直接调用
+
+## 2026-09-08 — 🎉🎉🎉 cart-add 成功！itemCount 1→2 + screenshot 确认
+
+### 成功方案（daemon snapshot + click + select + fill）
+
+```
+1. snapshot → 找到 input.ant-input-number-input 的 ref=157
+2. click(ref=157) → 聚焦输入框
+3. eval document.activeElement.select() → 全选现有文本 "0"
+4. fill(ref=157, "1") → CDP 键盘事件替换文本 → React state 更新！
+5. snapshot → 找到加采购车按钮 ref=165
+6. click(ref=165) → 加采购车
+7. cart-list 验证：itemCount 1→2，郑州林诺药业 15联益生菌粉出现
+```
+
+### Screenshot 确认
+
+购物车截图显示 2 个店铺：
+1. 郑州林诺药业有限公司 — 15联即食益生菌粉 ×2 ¥4.44 (券后) 小计 8.88
+2. 沈阳修农特生态科技有限公司 — 修正宠物益生菌 ×2 ¥6.80 小计 12.60
+
+### cart-add adapter 结论
+
+cart-add 不能作为独立 adapter 在页面上下文运行——它需要 daemon 的 snapshot/fill/click 流程。adapter 已重写为文档模式：说明正确的交互流程，并在详情页时返回确认信息。
+
+### cart-remove 方案
+
+cart-remove 可以用同样的 snapshot+click 方式：在购物车页面找到删除按钮的 ref 并 click。不需要 mtop API。
