@@ -1012,3 +1012,33 @@ async API 数据格式：`{params: {operator: "...", data: {...}}}` — operator
 1. **Puppeteer/Playwright**：通过 CDP 协议操作浏览器，可以发送受信任的鼠标事件（isTrusted=true）和正确的 cookie 分区上下文
 2. **bb-browser daemon 增强**：增加 `clickAt {x,y,tabId}` action（调 CDP `Input.dispatchMouseEvent`）
 3. **mtop 手动抓包**：人工在浏览器中加购一次，从 DevTools Network 面板捕获真实 API 请求参数，硬编码到 adapter
+
+## 2026-09-08 — 🎉 mtop 签名调用突破：SUCCESS::调用成功
+
+### 根因与解法
+
+三个关键修复同时应用才成功：
+1. **Warm-up 调用**：先发一个简单 GET（`mtop.user.getUserSimple`）让 mtop 框架设置/刷新 `_m_h5_tk` cookie
+2. **POST body 格式**：`data=` + `encodeURIComponent(JSON.stringify(dataObj))` + `Content-Type: application/x-www-form-urlencoded`（不是裸 JSON 字符串）
+3. **URL path 小写**：`mtop.1688.buycenter.mtoppurchaseastoreservice.render`（mtop.js 源码 `c.api.toLowerCase()`）
+
+### 已验证可用的调用模式
+
+```
+// Node 侧
+sign = md5(token + '&' + Date.now() + '&' + '12574478' + '&' + JSON.stringify(dataObj))
+// 页内 XHR
+xhr.open('POST', 'https://h5api.m.1688.com/h5/{api.toLowerCase()}/{v}/?jsv=2.7.4&appKey=12574478&t={ts}&sign={sign}&ecode=1&api={api}&v={v}&type=originaljson&dataType=json', true)
+xhr.withCredentials = true
+xhr.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded')
+xhr.send('data=' + encodeURIComponent(dataStr))
+```
+
+### 已发现的 API 清单（从 cart.js bundle 逆向）
+
+| API | 用途 |
+|---|---|
+| `mtop.1688.buycenter.MtopPurchaseAstoreService.render` | 渲染购物车 ✅ 已验证 SUCCESS |
+| `mtop.1688.buycenter.MtopPurchaseAstoreService.async` | 异步购物车操作 |
+| `mtop.1688.buycenter.MtopPurchaseAstoreService.submit` | 结算提交 |
+| `mtop.1688.mtoppurchaseservice` | 主购买服务 |
