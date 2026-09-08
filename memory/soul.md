@@ -901,3 +901,41 @@ air.1688.com 是 **Shadow DOM Web Component SPA**：`APP-ROOT`/`ALI-BAR`/`Q-DIAL
 ### 当前已验证可用的 1688 adapter
 
 search ✅ / product ✅ / auth ✅ / cart-list ✅ / store-freight ✅ / store-search ✅(部分) / order-list ✅ / order-detail ✅
+
+## 2026-09-08 — cart-add 深度排查最终结论：React isTrusted 检查是根本瓶颈
+
+### 已穷尽的方案（从浅到深）
+
+1. eval `.click()` — React 不响应
+2. 综合事件分发（pointerdown/mousedown/pointerup/mouseup/click）— React 不响应
+3. React Fiber onChange 直调 — handler 执行但 `buildSelectedOrder(fakeEvent)` 无法提取 SKU 数据
+4. 传真实 DOM SPAN 给 onChange — SPAN 无 data attributes，`buildSelectedOrder` 无法读取 SKU 信息
+5. MouseEvent + target override — `Cannot delete property 'isTrusted'`（React 18 检查 isTrusted）
+6. daemon ref-based click（加采购车按钮 ref=165 确认命中）— SKU 未选中，加购被静默拒绝
+7. CDP 坐标点击 — daemon click 只支持 ref 参数，不支持坐标
+
+### 根因
+
+**React 18 的 `isTrusted` 检查**：React 的事件系统在处理事件时会检查 `event.isTrusted`。通过 `dispatchEvent` 创建的合成事件 `isTrusted=false`，React 不处理。只有通过 CDP `Input.dispatchMouseEvent` 发送的原生鼠标事件才有 `isTrusted=true`。
+
+### 解决方案（需要 bb-browser daemon 增强）
+
+**方案 1（推荐）**：daemon 增加 `clickAt` action — 接受 `{x, y, tabId}` 参数，通过 CDP `Input.dispatchMouseEvent` 发送 `mousePressed` + `mouseReleased` 事件。这与 daemon 现有的 `mouseClick` 函数相同（`click` action 的 ref 路径已使用此函数），只是接受坐标而非 ref。
+
+**方案 2**：mtop API 网络发现 — 在购物车页面用 Chrome DevTools Protocol 的 `Network.enable` + 手动在页面上点击加购 → 捕获真实 API 名和参数 → 写入 adapter。
+
+### 1688 adapter 最终矩阵（更新后）
+
+| Adapter | 状态 | 方式 |
+|---|---|---|
+| search | ✅ | GBK 编码 + offerCard |
+| product | ✅ | document.title + module-od-main-price |
+| auth | ✅ | cookieStore |
+| cart-list | ✅ | bodyText DOM 解析 |
+| store-freight | ✅ | bodyText 正则 |
+| store-search | ✅ | 边界标记修复（5/13） |
+| order-list | ✅ | Shadow DOM 递归遍历 |
+| order-detail | ✅ | Shadow DOM 递归遍历 |
+| cart-add | ❌ | 需 CDP dispatchMouseEvent（isTrusted） |
+| cart-remove | ❌ | 依赖 cart-add |
+| checkout-preview | ❌ | 需 mtop API 发现 |
