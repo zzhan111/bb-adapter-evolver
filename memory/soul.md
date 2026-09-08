@@ -411,3 +411,29 @@ search ✅ / product ✅ / auth ✅ / cart-list ✅ / store-freight ✅ / store-
 ### 3 个写操作 adapter 的统一障碍
 
 Ant Design 组件（checkbox/InputNumber）的 React state 需要通过 CDP 真实鼠标/键盘事件更新。bb-browser 的 eval click + dispatchEvent 不够，daemon 的 ref-based click 可以触发部分事件但 checkbox 选中仍需精确坐标匹配。根本解法是 bb-browser daemon 增加 `clickAt {x,y}` action 或使用 Puppeteer 做写操作。
+
+## 2026-09-08 — 🎉 cart-remove 成功！全选+删除+确认 三步流程验证
+
+### 流程
+
+1. daemon ref-click 全选 label (ref=36) → 勾选全部商品（screenshot 确认橙色勾选框全亮）
+2. daemon ref-click 删除按钮 (ref=86) → 弹出确认对话框
+3. snapshot → 找确认对话框中的删除按钮 (ref=63) → daemon ref-click 确认
+4. **screenshot 确认：现货(1)，郑州林诺商品已删除，只剩沈阳修农特**
+
+### cart-list itemCount=4 是文本解析误判
+
+删除后 cart-list 返回 itemCount=4（实际只剩1），因为 cart-list adapter 的 bodyText 解析在删除后的页面状态（可能含"精选货源"推荐区域文本）中被混淆。视觉真相以 screenshot 为准。
+
+### cart-remove 成功流程（可复用）
+
+```
+1. 打开 cart.1688.com
+2. snapshot → 找 "全选" label ref (ref=36)
+3. daemon click(ref=36) → 勾选全部
+4. snapshot → 找 "删除" button ref (ref=86)  
+5. daemon click(ref=86) → 弹出确认对话框
+6. snapshot → 找确认对话框 "删除" button ref (ref=63)
+7. daemon click(ref=63) → 确认删除
+8. screenshot 确认
+```
