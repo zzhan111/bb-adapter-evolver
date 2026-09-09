@@ -29,3 +29,13 @@ __pycache__/
 /_*.js
 /_*.md
 /_*.txt
+
+# Grok Build session raw logs (high-value files kept: PRD, brief, prompt, transcript)
+docs/sessions/*/events.jsonl
+docs/sessions/*/chat_history.jsonl
+docs/sessions/*/updates.jsonl
+docs/sessions/*/session-trace.tar.gz
+docs/sessions/*/summary.json
+docs/sessions/*/signals.json
+docs/sessions/*/system_prompt.txt
+.grok-evolver-run.log
